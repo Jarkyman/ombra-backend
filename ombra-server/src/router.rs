@@ -19,9 +19,9 @@ pub fn build(state: AppState) -> Router {
         .route("/ws/transcript", get(websocket::handle_transcript_stream))
         .route("/query", post(query::handle))
         .route("/sessions", get(sessions::list))
-        .route("/sessions/{session_id}/clusters", get(sessions::list_clusters))
+        .route("/sessions/:session_id/clusters", get(sessions::list_clusters))
         .route("/clusters", get(clusters::list))
-        .route("/clusters/{id}", get(clusters::get))
+        .route("/clusters/:id", get(clusters::get))
         .route("/settings", get(settings::get))
         .route("/settings", patch(settings::update))
         .layer(
