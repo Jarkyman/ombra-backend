@@ -58,7 +58,7 @@ Embedding model: `nomic-embed-text-v1.5` (runs on all profiles via `fastembed`).
 ## Setup
 
 ```bash
-git clone https://github.com/your-username/ombra-backend.git
+git clone https://github.com/Jarkyman/ombra-backend.git
 cd ombra-backend
 bash setup.sh
 ```
