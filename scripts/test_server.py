@@ -179,20 +179,29 @@ def test_sessions():
 def test_clusters():
     section("4. REST — clusters (requires cluster_timeout_minutes = 0)")
 
-    status, body = http_get(f"/sessions/{SESSION_ID}/clusters")
-    if status != 200:
-        fail(f"GET /sessions/{SESSION_ID}/clusters", f"got {status}")
-        return
+    print("  Waiting for AI cluster processing (up to 90s)...", end="", flush=True)
+    deadline = time.time() + 90
+    clusters = []
+    while time.time() < deadline:
+        status, body = http_get(f"/sessions/{SESSION_ID}/clusters")
+        if status != 200:
+            fail(f"GET /sessions/{SESSION_ID}/clusters", f"got {status}")
+            return False
+        clusters = json.loads(body)
+        if clusters:
+            break
+        print(".", end="", flush=True)
+        time.sleep(5)
+    print()
 
-    clusters = json.loads(body)
     if clusters:
         c = clusters[0]
-        ok(f"Cluster found  (event_type={c['event_type']!r}, relevance={c['relevance_score']:.2f})")
+        ok(f"{len(clusters)} cluster(s) found  (event_type={c['event_type']!r}, relevance={c['relevance_score']:.2f})")
         ok(f"Summary: {c['event_summary'][:80]}...")
         return True
     else:
-        print(f"  {YELLOW}!{RESET} No clusters yet — cluster hasn't closed.")
-        print(f"      Set cluster_timeout_minutes = 0 in ombra.toml and restart the server.")
+        print(f"  {YELLOW}!{RESET} No clusters after 90s — cluster_timeout_minutes may not be 0,")
+        print(f"      or AI processing failed. Check server logs.")
         return False
 
 

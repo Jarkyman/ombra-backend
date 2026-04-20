@@ -17,6 +17,7 @@ use crate::inference::{InferenceEngine, InferenceEngineConfig};
 pub struct LlamaCppInferenceEngine {
     model: Arc<LlamaModel>,
     backend: Arc<LlamaBackend>,
+    context_size: u32,
     max_tokens: i32,
 }
 
@@ -33,6 +34,7 @@ impl LlamaCppInferenceEngine {
         Ok(Self {
             model: Arc::new(model),
             backend: Arc::new(backend),
+            context_size: config.context_size,
             max_tokens: config.max_tokens as i32,
         })
     }
@@ -46,7 +48,8 @@ impl InferenceEngine for LlamaCppInferenceEngine {
         let prompt = prompt.to_owned();
         let max_tokens = self.max_tokens;
 
-        task::spawn_blocking(move || run_inference(&model, &backend, &prompt, max_tokens))
+        let context_size = self.context_size;
+        task::spawn_blocking(move || run_inference(&model, &backend, &prompt, context_size, max_tokens))
             .await
             .map_err(|e| OmbraError::Inference(format!("thread join: {e}")))?
     }
@@ -56,9 +59,11 @@ fn run_inference(
     model: &LlamaModel,
     backend: &LlamaBackend,
     prompt: &str,
+    context_size: u32,
     max_tokens: i32,
 ) -> Result<String, OmbraError> {
-    let ctx_params = LlamaContextParams::default();
+    let ctx_params = LlamaContextParams::default()
+        .with_n_ctx(std::num::NonZeroU32::new(context_size));
     let mut ctx = model
         .new_context(backend, ctx_params)
         .map_err(|e| OmbraError::Inference(format!("context creation: {e}")))?;
