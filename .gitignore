@@ -1,0 +1,28 @@
+# Build output
+target/
+
+# Config (contains encryption key)
+ombra.toml
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# TLS certificates (generated locally)
+certs/
+
+# Models (large binary files)
+models/
+
+# Qdrant data
+qdrant_storage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml

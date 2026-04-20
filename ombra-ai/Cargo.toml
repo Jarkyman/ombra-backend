@@ -1,0 +1,18 @@
+[package]
+name = "ombra-ai"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+ombra-common = { workspace = true }
+qdrant-client = "1"
+llama-cpp-2 = "0.1"
+fastembed = { version = "5", features = ["ort-download-binaries-rustls-tls"] }
+lingua = "1.8"
+encoding_rs = "0.8"
