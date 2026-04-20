@@ -17,22 +17,16 @@ Restart when prompted. After reboot, Ubuntu opens automatically — set a userna
 
 **2. Install Docker Desktop for Windows** from docker.com. During install, make sure "Use WSL2 based engine" is checked. After install, go to Settings → Resources → WSL Integration and enable it for Ubuntu-24.04.
 
-**3. Copy the Ombra backend into WSL2:**
+**3. Clone Ombra:**
 
 ```bash
-cp -r /mnt/c/Users/<your-windows-username>/path/to/ombra-backend ~/
-```
-
-Or from PowerShell on Windows:
-
-```powershell
-wsl cp -r C:\path\to\ombra-backend /home/<wsl-username>/
+git clone https://github.com/Jarkyman/ombra-backend.git
+cd ombra-backend
 ```
 
 **4. Run setup:**
 
 ```bash
-cd ~/ombra-backend
 bash setup.sh
 ```
 

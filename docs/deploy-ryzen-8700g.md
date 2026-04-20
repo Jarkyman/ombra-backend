@@ -25,8 +25,8 @@ Flash to a USB stick with [balenaEtcher](https://etcher.balena.io/) and install.
 SSH in or open a terminal directly:
 
 ```bash
-git clone https://github.com/your-org/ombra.git
-cd ombra/ombra-backend
+git clone https://github.com/Jarkyman/ombra-backend.git
+cd ombra-backend
 bash setup.sh
 ```
 

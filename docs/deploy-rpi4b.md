@@ -34,8 +34,8 @@ ssh <your-user>@<ip-address>
 Clone the repo and run the wizard:
 
 ```bash
-git clone https://github.com/your-org/ombra.git
-cd ombra/ombra-backend
+git clone https://github.com/Jarkyman/ombra-backend.git
+cd ombra-backend
 bash setup.sh
 ```
 
