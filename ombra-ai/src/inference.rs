@@ -12,4 +12,5 @@ pub struct InferenceEngineConfig {
     pub context_size: u32,
     pub thread_count: u32,
     pub max_tokens: u32,
+    pub chat_template: Option<String>,
 }

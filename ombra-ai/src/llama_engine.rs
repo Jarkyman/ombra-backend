@@ -6,6 +6,7 @@ use llama_cpp_2::{
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
     model::{params::LlamaModelParams, AddBos, LlamaModel},
+    sampling::LlamaSampler,
     token::LlamaToken,
 };
 use tokio::task;
@@ -19,6 +20,7 @@ pub struct LlamaCppInferenceEngine {
     backend: Arc<LlamaBackend>,
     context_size: u32,
     max_tokens: i32,
+    chat_template: Option<String>,
 }
 
 impl LlamaCppInferenceEngine {
@@ -36,7 +38,15 @@ impl LlamaCppInferenceEngine {
             backend: Arc::new(backend),
             context_size: config.context_size,
             max_tokens: config.max_tokens as i32,
+            chat_template: config.chat_template.clone(),
         })
+    }
+
+    fn apply_template(&self, prompt: &str) -> String {
+        match &self.chat_template {
+            Some(template) => template.replace("{prompt}", prompt),
+            None => prompt.to_owned(),
+        }
     }
 }
 
@@ -45,14 +55,23 @@ impl InferenceEngine for LlamaCppInferenceEngine {
     async fn complete(&self, prompt: &str) -> Result<String, OmbraError> {
         let model = Arc::clone(&self.model);
         let backend = Arc::clone(&self.backend);
-        let prompt = prompt.to_owned();
+        let prompt = self.apply_template(prompt);
+        let context_size = self.context_size;
         let max_tokens = self.max_tokens;
 
-        let context_size = self.context_size;
         task::spawn_blocking(move || run_inference(&model, &backend, &prompt, context_size, max_tokens))
             .await
             .map_err(|e| OmbraError::Inference(format!("thread join: {e}")))?
     }
+}
+
+fn build_sampler() -> LlamaSampler {
+    LlamaSampler::chain_simple([
+        LlamaSampler::penalties(-1, 1.3, 0.0, 0.0),
+        LlamaSampler::temp(0.2),
+        LlamaSampler::top_p(0.9, 1),
+        LlamaSampler::dist(0),
+    ])
 }
 
 fn run_inference(
@@ -85,22 +104,19 @@ fn run_inference(
     ctx.decode(&mut batch)
         .map_err(|e| OmbraError::Inference(format!("initial decode: {e}")))?;
 
+    let mut sampler = build_sampler();
+    sampler.accept_many(prompt_tokens.iter().copied());
+
     let mut output = String::new();
     let eos_token = model.token_eos();
     let mut cursor = prompt_tokens.len() as i32;
     let mut decoder = encoding_rs::UTF_8.new_decoder();
 
     for _ in 0..max_tokens {
-        let logits = ctx.get_logits_ith(batch.n_tokens() - 1);
+        let next_token: LlamaToken = sampler.sample(&ctx, batch.n_tokens() - 1);
+        sampler.accept(next_token);
 
-        let next_token = logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(id, _)| LlamaToken(id as i32))
-            .ok_or_else(|| OmbraError::Inference("empty logits".to_string()))?;
-
-        if next_token == eos_token {
+        if next_token == eos_token || model.is_eog_token(next_token) {
             break;
         }
 

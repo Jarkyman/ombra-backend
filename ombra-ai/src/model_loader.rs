@@ -31,6 +31,7 @@ fn build_engine_config(config: &AppConfig) -> InferenceEngineConfig {
         context_size,
         thread_count: detect_optimal_thread_count(),
         max_tokens,
+        chat_template: Some("<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n".to_string()),
     }
 }
 
