@@ -20,21 +20,23 @@ Restart when prompted. After reboot, Ubuntu opens automatically — set a userna
 - Download from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
 - Run the installer — when asked, choose **"Use WSL2 based engine"** (should be default)
 - After install, open Docker Desktop and go to: **Settings → Resources → WSL Integration**
-- Enable the toggle for **Ubuntu-24.04**
+- Enable the toggle for **Ubuntu-24.04** — this lets Docker Desktop communicate with your WSL2 environment
 - Click **Apply & Restart**
 
 Docker Desktop must be running (visible in the system tray) whenever you use Ombra.
 
-**3. Clone Ombra:**
+**3. Open the WSL2 terminal:**
+
+Search for **Ubuntu** in the Windows Start menu and open it. This is your Linux terminal — all following commands run here.
+
+**4. Clone Ombra and run setup:**
+
+Make sure you are in the Linux home directory — not on the Windows filesystem (`/mnt/c/...`).
 
 ```bash
+cd ~
 git clone https://github.com/Jarkyman/ombra-backend.git
 cd ombra-backend
-```
-
-**4. Run setup:**
-
-```bash
 bash setup.sh
 ```
 
@@ -86,6 +88,23 @@ Go to Windows Settings → Apps → Installed apps → search "Windows Subsystem
 **Optional — uninstall Docker Desktop:**
 
 Settings → Apps → Docker Desktop → Uninstall.
+
+## Troubleshooting
+
+**`error: chmod on /mnt/c/... failed: Operation not permitted`** during git clone  
+You are cloning into the Windows filesystem. Run `cd ~` first and clone into the Linux home directory instead.
+
+**`Command 'cargo' not found`** after setup  
+Rust was installed but PATH is not updated in the current session. Run `source ~/.cargo/env` and try again.
+
+**`Docker daemon is not running`**  
+Docker Desktop is not started. Open it from the Windows Start menu and wait for it to finish loading (the system tray icon stops animating), then try again.
+
+**`docker: permission denied`**  
+Your user is not yet in the docker group for this session. Run `newgrp docker` or close and reopen the Ubuntu terminal.
+
+**Build takes a very long time**  
+Normal on first run — `cargo build --release` compiles llama.cpp from source. Expect 5–10 minutes on a Ryzen. Subsequent builds are much faster.
 
 ## Notes
 

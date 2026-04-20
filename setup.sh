@@ -149,7 +149,11 @@ check_dependencies() {
         if [[ "$(uname)" == "Darwin" ]]; then
             error "Docker is not running. Open Docker Desktop and try again."
         else
-            error "Docker daemon is not running. Start it with: sudo systemctl start docker"
+            info "Starting Docker..."
+            $SUDO systemctl start docker 2>/dev/null \
+                || $SUDO service docker start 2>/dev/null \
+                || error "Could not start Docker. Run: sudo systemctl start docker"
+            sleep 2
         fi
     fi
 
