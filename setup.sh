@@ -148,6 +148,8 @@ check_dependencies() {
     if ! $DOCKER_CMD info >/dev/null 2>&1; then
         if [[ "$(uname)" == "Darwin" ]]; then
             error "Docker is not running. Open Docker Desktop and try again."
+        elif grep -qi microsoft /proc/version 2>/dev/null; then
+            error "Docker is not running. Open Docker Desktop on Windows and make sure WSL integration is enabled for this distro (Docker Desktop → Settings → Resources → WSL Integration)."
         else
             info "Starting Docker..."
             $SUDO systemctl start docker 2>/dev/null \

@@ -100,6 +100,9 @@ Rust was installed but PATH is not updated in the current session. Run `source ~
 **`Docker daemon is not running`**  
 Docker Desktop is not started. Open it from the Windows Start menu and wait for it to finish loading (the system tray icon stops animating), then try again.
 
+**Docker Desktop is open but setup still says daemon is not running**  
+WSL integration is not enabled. In Docker Desktop: **Settings → Resources → WSL Integration** → enable the toggle for **Ubuntu-24.04** → click **Apply & Restart**. Then try setup again.
+
 **`docker: permission denied`**  
 Your user is not yet in the docker group for this session. Run `newgrp docker` or close and reopen the Ubuntu terminal.
 
