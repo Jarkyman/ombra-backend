@@ -34,7 +34,10 @@ openssl genrsa -out "$CERTS_DIR/ca.key" 4096 2>/dev/null
 openssl req -new -x509 -days 3650 \
     -key "$CERTS_DIR/ca.key" \
     -out "$CERTS_DIR/ca.crt" \
-    -subj "/CN=Ombra Local CA/O=Ombra"
+    -subj "/CN=Ombra Local CA/O=Ombra" \
+    -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign" \
+    -addext "subjectKeyIdentifier=hash"
 
 # 2. Server certificate
 openssl genrsa -out "$CERTS_DIR/server.key" 2048 2>/dev/null
@@ -47,7 +50,7 @@ openssl x509 -req -days 365 \
     -CA "$CERTS_DIR/ca.crt" \
     -CAkey "$CERTS_DIR/ca.key" \
     -CAcreateserial \
-    -extfile <(printf "subjectAltName=%s" "$SAN") \
+    -extfile <(printf "subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE" "$SAN") \
     -out "$CERTS_DIR/server.crt" 2>/dev/null
 
 # 3. Client certificate — represents iPhone or hardware device
@@ -61,6 +64,7 @@ openssl x509 -req -days 365 \
     -CA "$CERTS_DIR/ca.crt" \
     -CAkey "$CERTS_DIR/ca.key" \
     -CAcreateserial \
+    -extfile <(printf "extendedKeyUsage=clientAuth\nbasicConstraints=CA:FALSE") \
     -out "$CERTS_DIR/client.crt" 2>/dev/null
 
 cp "$CERTS_DIR/ca.crt" "$CERTS_DIR/client-ca.crt"

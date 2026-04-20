@@ -182,6 +182,9 @@ Issues and improvements found during real-hardware and VM testing.
 - [ ] Onboarding questionnaire needs more questions — cover daily routines, hobbies, relationships, goals, communication style etc. to give the AI a richer starting context.
 - [ ] Add `setup.sh --profile` flag to re-enter the onboarding questionnaire at any time after setup, so the user can add or update answers without re-running the full wizard.
 
+## Pre-production cleanup
+- [ ] Fix `dead_code` warnings in `entity.rs` (first_seen, last_seen), `transcript.rs` (session_id, raw_whisper_text, detected_language, recorded_at, created_at), and `user_profile.rs` (id, created_at) — either use the fields or remove them. Run `cargo clippy -- -D warnings` with zero warnings before shipping.
+
 ## future
 - [ ] Assistent mode (can do stuff for me)
 - [ ] Notifications (Remind me of stuff i need to do)
