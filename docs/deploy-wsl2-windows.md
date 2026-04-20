@@ -15,7 +15,15 @@ wsl --install -d Ubuntu-24.04
 
 Restart when prompted. After reboot, Ubuntu opens automatically — set a username and password.
 
-**2. Install Docker Desktop for Windows** from docker.com. During install, make sure "Use WSL2 based engine" is checked. After install, go to Settings → Resources → WSL Integration and enable it for Ubuntu-24.04.
+**2. Install Docker Desktop for Windows:**
+
+- Download from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+- Run the installer — when asked, choose **"Use WSL2 based engine"** (should be default)
+- After install, open Docker Desktop and go to: **Settings → Resources → WSL Integration**
+- Enable the toggle for **Ubuntu-24.04**
+- Click **Apply & Restart**
+
+Docker Desktop must be running (visible in the system tray) whenever you use Ombra.
 
 **3. Clone Ombra:**
 
