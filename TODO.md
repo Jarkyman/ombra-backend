@@ -113,6 +113,7 @@ as the AI learns more — but it needs a foundation to start from.
 - [x] AI generates a free-text profile summary from the answers → stored in SQLite + injected as "About the user:" section in every RAG prompt
 - [x] Profile is never overwritten by onboarding again — `run_if_needed()` skips if DB row already exists
 - [ ] Embed user profile summary in Qdrant (currently only in AppState/prompt — not searchable as a vector)
+- [ ] When user is filling all the questions and the AI is downloaded, feed the inforamtion to it and ask it to generate questions it need to know the person better. 
 
 ### Ongoing Personalization (future)
 - [ ] AI proactively asks clarifying questions during idle time when it has identified gaps in its understanding of the user ("I keep hearing about 'projektet' — what is that?")
