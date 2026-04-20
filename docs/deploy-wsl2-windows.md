@@ -40,8 +40,6 @@ cd ombra-backend
 bash setup.sh
 ```
 
-Setup detects x86_64 + 32 GB RAM → recommends **Performance** profile (Gemma-2-9B Q8_0).
-
 **5. Start the server** (WSL2 has no systemd by default — run directly):
 
 ```bash
@@ -102,6 +100,9 @@ Docker Desktop is not started. Open it from the Windows Start menu and wait for 
 
 **Docker Desktop is open but setup still says daemon is not running**  
 WSL integration is not enabled. In Docker Desktop: **Settings → Resources → WSL Integration** → enable the toggle for **Ubuntu-24.04** → click **Apply & Restart**. Then try setup again.
+
+**`Failed to start ombra.service: Unit docker.service not found`**  
+Do not use `sudo systemctl start ombra` on WSL2 — the systemd service is only installed on native Linux. Run the server directly instead: `./target/release/ombra-server` (see step 5).
 
 **`docker: permission denied`**  
 Your user is not yet in the docker group for this session. Run `newgrp docker` or close and reopen the Ubuntu terminal.

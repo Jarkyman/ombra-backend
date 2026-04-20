@@ -427,8 +427,11 @@ finalize_background() {
         sleep 5
     done
 
-    # Install systemd service
-    if [[ "$(uname)" != "Darwin" ]] && command -v systemctl > /dev/null 2>&1; then
+    # Install systemd service (not on macOS or WSL2 — Docker Desktop manages the daemon there)
+    local is_wsl=false
+    grep -qi microsoft /proc/version 2>/dev/null && is_wsl=true
+
+    if [[ "$(uname)" != "Darwin" ]] && [[ "$is_wsl" == "false" ]] && command -v systemctl > /dev/null 2>&1; then
         local service_file="/etc/systemd/system/ombra.service"
         local binary="$SCRIPT_DIR/target/release/ombra-server"
         $SUDO tee "$service_file" > /dev/null << SVCEOF
@@ -612,12 +615,16 @@ print_summary() {
     echo -e "${BOLD}  Ombra setup complete${NC}"
     echo -e "${BOLD}  ────────────────────────────────────────────────${NC}"
     echo ""
-    if [[ "$(uname)" == "Darwin" ]]; then
+    local _is_wsl=false
+    grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
+
+    if [[ "$(uname)" == "Darwin" ]] || [[ "$_is_wsl" == "true" ]]; then
         echo "  Start:"
         echo "    ./target/release/ombra-server"
         echo ""
         echo "  Or run in background:"
         echo "    nohup ./target/release/ombra-server > ombra.log 2>&1 &"
+        echo "    tail -f ombra.log"
         echo ""
         echo "  Health check:"
         echo "    curl --cacert certs/ca.crt \\"

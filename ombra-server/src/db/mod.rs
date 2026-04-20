@@ -27,10 +27,14 @@ use ombra_common::error::OmbraError;
 
 pub type DatabasePool = SqlitePool;
 
-pub async fn create_pool(database_url: &str) -> Result<DatabasePool, OmbraError> {
+pub async fn create_pool(database_path: &str) -> Result<DatabasePool, OmbraError> {
+    let opts = sqlx::sqlite::SqliteConnectOptions::new()
+        .filename(database_path)
+        .create_if_missing(true);
+
     SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(database_url)
+        .connect_with(opts)
         .await
         .map_err(|e| OmbraError::Storage(format!("database connection: {e}")))
 }
