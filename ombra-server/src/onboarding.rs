@@ -134,12 +134,12 @@ fn build_profile_prompt(
     let facts = lines.join("\n");
 
     format!(
-        "Write a concise personal context summary (3-5 sentences) based on these facts about the user.\n\
-         Write in third person. Include who they are, what they do, where they are, \
-         who matters to them, and what they are focused on.\n\
+        "Write a concise personal context summary (3-5 sentences) about a person based on the facts below.\n\
+         Write in third person using their name. The person described IS the subject — do not confuse them with people listed under \"Important people\", those are others in their life.\n\
+         Include: who they are, what they do, where they live, who matters to them, and what they are currently working on.\n\
          Write only the summary — no intro, no labels.\n\
          \n\
-         Facts:\n\
+         Facts about the person:\n\
          {facts}"
     )
 }
