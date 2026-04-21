@@ -49,12 +49,8 @@ async fn run_query(state: AppState, query_text: String) -> Result<QueryResponse,
         state.vector_store.search_entities(query_vector, ENTITY_SEARCH_LIMIT),
     )?;
 
-    if cluster_results.is_empty() {
-        return Ok(QueryResponse {
-            answer: "Nothing captured about this.".to_string(),
-            sources: vec![],
-        });
-    }
+    let response_language = state.config.read().unwrap().response_language.clone();
+    let user_profile = state.user_profile_summary.read().unwrap().clone();
 
     let cluster_ids: Vec<String> = cluster_results.iter().map(|r| r.cluster_id.clone()).collect();
     let clusters = db::cluster::get_clusters_by_ids(&state.database_pool, &cluster_ids).await?;
@@ -76,9 +72,6 @@ async fn run_query(state: AppState, query_text: String) -> Result<QueryResponse,
                 .map(|p| format!("{} ({}): {}", e.name, e.entity_type, p))
         })
         .collect();
-
-    let response_language = state.config.read().unwrap().response_language.clone();
-    let user_profile = state.user_profile_summary.read().unwrap().clone();
     let prompt = build_rag_prompt(&query_text, &event_context, &entity_context, &user_profile, &response_language);
     let answer = state.inference_engine.complete(&prompt).await?;
 
@@ -120,7 +113,7 @@ fn build_rag_prompt(
          - State only what was captured — no conclusions, no analysis\n\
          - No filler like \"Based on your transcripts\" or \"It appears that\"\n\
          - Use short bullet points for multiple facts, one sentence for a single fact\n\
-         - If nothing is relevant: reply with exactly \"Nothing captured about this.\"\n\
+         - If nothing was captured about the question: say so briefly in the response language\n\
          \n\
          {profile_section}\
          Captured events:\n\
