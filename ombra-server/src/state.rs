@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
+use tokio::sync::broadcast;
 use ombra_ai::{
     embeddings::EmbeddingEngine,
     inference::InferenceEngine,
@@ -9,6 +10,7 @@ use ombra_ai::{
 use ombra_common::config::AppConfig;
 
 use crate::db::DatabasePool;
+use crate::events::ServerEvent;
 use crate::ingestion::IngestionPipeline;
 
 #[derive(Clone)]
@@ -21,4 +23,5 @@ pub struct AppState {
     pub config: Arc<RwLock<AppConfig>>,
     pub config_path: PathBuf,
     pub user_profile_summary: Arc<RwLock<Option<String>>>,
+    pub event_broadcast: broadcast::Sender<ServerEvent>,
 }

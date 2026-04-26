@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
 use ombra_ai::{
     detect_iso639,
@@ -15,6 +15,7 @@ use ombra_common::error::OmbraError;
 use crate::db::{self, DatabasePool};
 use crate::db::cluster::InsertClusterParams;
 use crate::db::entity::Entity;
+use crate::events::ServerEvent;
 use crate::ingestion::cluster::OpenCluster;
 
 pub struct ClusterProcessor {
@@ -24,6 +25,7 @@ pub struct ClusterProcessor {
     vector_store: Arc<QdrantVectorStore>,
     encryption_key: [u8; 32],
     profile_encounter_threshold: u32,
+    event_sender: broadcast::Sender<ServerEvent>,
 }
 
 #[derive(Deserialize)]
@@ -47,6 +49,7 @@ impl ClusterProcessor {
         vector_store: Arc<QdrantVectorStore>,
         encryption_key: [u8; 32],
         profile_encounter_threshold: u32,
+        event_sender: broadcast::Sender<ServerEvent>,
     ) -> Self {
         Self {
             database_pool,
@@ -55,6 +58,7 @@ impl ClusterProcessor {
             vector_store,
             encryption_key,
             profile_encounter_threshold,
+            event_sender,
         }
     }
 
@@ -132,6 +136,11 @@ impl ClusterProcessor {
             .await?;
 
         self.process_entities(&transcript_texts, &cluster.id, closed_at).await?;
+
+        let _ = self.event_sender.send(ServerEvent::ClusterReady {
+            session_id: open_cluster.session_id.clone(),
+            cluster_id: cluster.id.clone(),
+        });
 
         Ok(())
     }

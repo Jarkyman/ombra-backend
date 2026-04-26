@@ -82,7 +82,6 @@ pub async fn get_transcripts_by_ids(
         .collect()
 }
 
-#[allow(dead_code)]
 pub async fn list_transcripts_by_session(
     pool: &DatabasePool,
     session_id: &str,

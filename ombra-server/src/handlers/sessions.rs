@@ -70,6 +70,51 @@ pub async fn list_clusters(
     }
 }
 
+#[derive(Serialize)]
+pub struct TranscriptResponse {
+    pub id: String,
+    pub session_id: String,
+    pub content: String,
+    pub detected_language: String,
+    pub recorded_at: i64,
+}
+
+pub async fn list_transcripts(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> impl IntoResponse {
+    let encryption_key = {
+        let config = state.config.read().unwrap();
+        match config.encryption_key_bytes() {
+            Ok(k) => k,
+            Err(error) => {
+                tracing::error!(%error, "invalid encryption key");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        }
+    };
+
+    match db::transcript::list_transcripts_by_session(&state.database_pool, &session_id, &encryption_key).await {
+        Ok(transcripts) => {
+            let body: Vec<TranscriptResponse> = transcripts
+                .into_iter()
+                .map(|t| TranscriptResponse {
+                    id: t.id,
+                    session_id: t.session_id,
+                    content: t.content,
+                    detected_language: t.detected_language,
+                    recorded_at: t.recorded_at,
+                })
+                .collect();
+            (StatusCode::OK, Json(body)).into_response()
+        }
+        Err(error) => {
+            tracing::error!(%error, "list session transcripts failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 fn cluster_to_response(c: db::cluster::Cluster) -> ClusterResponse {
     ClusterResponse {
         id: c.id,

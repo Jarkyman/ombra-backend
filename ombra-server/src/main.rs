@@ -1,4 +1,5 @@
 mod db;
+mod events;
 mod handlers;
 mod ingestion;
 mod network;
@@ -12,9 +13,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use axum_server::tls_rustls::RustlsConfig;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 use rustls;
+
+use events::ServerEvent;
 
 use ombra_ai::{
     embeddings::FastEmbedEngine,
@@ -81,6 +84,7 @@ async fn main() {
     );
 
     let (cluster_sender, cluster_receiver) = mpsc::channel(CLUSTER_CHANNEL_BUFFER);
+    let (event_broadcast, _) = broadcast::channel::<ServerEvent>(128);
 
     let cluster_processor = ClusterProcessor::new(
         database_pool.clone(),
@@ -89,6 +93,7 @@ async fn main() {
         Arc::clone(&vector_store),
         encryption_key,
         config.profile_encounter_threshold,
+        event_broadcast.clone(),
     );
 
     cluster_processor.spawn(cluster_receiver);
@@ -109,6 +114,7 @@ async fn main() {
         config: Arc::new(RwLock::new(config.clone())),
         config_path: PathBuf::from(CONFIG_PATH),
         user_profile_summary: Arc::new(RwLock::new(user_profile_summary)),
+        event_broadcast,
     };
 
     network::start(&config).await;

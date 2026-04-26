@@ -14,8 +14,8 @@
 - [x] Transcript ingestion — only discard technically empty transcripts ([BLANK_AUDIO], whitespace-only); store everything else
 - [x] Add `detected_language` (ISO 639-1) and `raw_whisper_text` fields to transcripts table (migration)
 - [x] REST endpoints for the mobile app (sessions, clusters, settings GET/PATCH)
-- [ ] `GET /sessions/:id/transcripts` — list raw transcripts in a session so the app/debug tools can verify ingestion before clusters are ready
-- [ ] Processing status + app callback — when a cluster finishes AI processing, push a WebSocket event to connected clients (`{"event": "cluster_ready", "session_id": "...", "cluster_id": "..."}`) so the app can refresh without polling
+- [x] `GET /sessions/:id/transcripts` — list raw transcripts in a session so the app/debug tools can verify ingestion before clusters are ready
+- [x] Processing status + app callback — when a cluster finishes AI processing, push a WebSocket event to connected clients (`{"event": "cluster_ready", "session_id": "...", "cluster_id": "..."}`) so the app can refresh without polling
 - [x] Wire up `tower-http` tracing middleware with JSONL log format
 
 ## ombra-ai
