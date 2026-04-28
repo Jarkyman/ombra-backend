@@ -137,7 +137,7 @@ install_build_tools() {
     $SUDO apt-get update -qq
     $SUDO apt-get install -y -qq \
         gcc g++ make libc6-dev binutils pkg-config libssl-dev cmake curl openssl \
-        clang libclang-dev
+        clang libclang-dev qrencode
 }
 
 check_dependencies() {
@@ -610,6 +610,36 @@ wait_for_ready() {
     echo ""
 }
 
+# ── QR code ──────────────────────────────────────────────────────────────────
+
+show_qr() {
+    if ! command -v qrencode >/dev/null 2>&1; then
+        warning "qrencode not installed — skipping QR code. Install with: sudo apt install qrencode"
+        return
+    fi
+
+    local port
+    port="$(grep 'server_port' "$CONFIG_FILE" 2>/dev/null | awk -F'= ' '{print $2}' | tr -d ' ')"
+    port="${port:-8080}"
+
+    local ca_cert client_cert client_key
+    ca_cert="$(openssl base64 -A -in "$CERTS_DIR/ca.crt")"
+    client_cert="$(openssl base64 -A -in "$CERTS_DIR/client.crt")"
+    client_key="$(openssl base64 -A -in "$CERTS_DIR/client.key")"
+
+    local payload
+    payload="$(printf '{"host":"ombra.local","port":%s,"ca_cert":"%s","client_cert":"%s","client_key":"%s"}' \
+        "$port" "$ca_cert" "$client_cert" "$client_key")"
+
+    echo ""
+    echo -e "${BOLD}  Scan with the Ombra app to connect:${NC}"
+    echo ""
+    qrencode -t UTF8 "$payload"
+    echo ""
+    echo -e "  ${DIM}Show again: bash show-qr.sh${NC}"
+    echo ""
+}
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 print_summary() {
@@ -696,5 +726,6 @@ run_onboarding
 # Phase 4: Progress until done
 wait_for_ready
 
-# Phase 5: Summary
+# Phase 5: Summary + QR code
 print_summary
+show_qr

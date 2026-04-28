@@ -20,7 +20,18 @@ Flash to a USB stick with [balenaEtcher](https://etcher.balena.io/) and install.
 - Enable OpenSSH server
 - Full disk install on SSD/eMMC
 
-## 2. Run setup
+## 2. Update packages
+
+Before running setup, update the system and reboot if there are kernel updates:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo reboot
+```
+
+SSH back in after the reboot, then continue.
+
+## 3. Run setup
 
 SSH in or open a terminal directly:
 
@@ -35,11 +46,12 @@ Setup will:
 2. Detect x86_64 + 8–16 GB RAM → recommend **Efficiency** profile
 3. Ask: language → model → Standard/Advanced → remote access (optional)
 4. Download Gemma-2-2B Q8_0 in the background (~2.8 GB)
-5. Build the server in the background (`cargo build --release` — takes 8–15 min on N100)
+5. Build the server in the background (`cargo build --release` — 30–60 min on N100, llama.cpp compiles from source)
 6. Run the onboarding questionnaire while everything builds
 7. Install and enable the `ombra` systemd service
+8. Show a QR code to connect the mobile app
 
-## 3. Start the server
+## 4. Start the server
 
 ```bash
 sudo systemctl start ombra
@@ -51,23 +63,22 @@ Health check:
 ```bash
 curl --cacert certs/ca.crt \
      --cert certs/client.crt --key certs/client.key \
-     https://localhost:8080/health
+     https://ombra.local:8080/health
 ```
 
-## 4. Connect the mobile app
+## 5. Connect the mobile app
 
-Copy to your phone:
+Scan the QR code shown at the end of setup with the Ombra app. To show it again:
 
-```
-certs/client.crt
-certs/client.key
-certs/ca.crt
+```bash
+bash show-qr.sh
 ```
 
 The app connects to `ombra.local:8080` locally. With DuckDNS configured, `<subdomain>.duckdns.org:8080` works from anywhere.
 
 ## Notes
 
+- **Build time:** 30–60 min on N100. llama-cpp-2 compiles the full llama.cpp C++ library from source — the N100's 4 low-power cores make this the bottleneck.
 - **Model size:** Gemma-2-2B Q8_0 is ~2.8 GB on disk and in RAM. Leaves plenty of headroom on 8 GB.
 - **N100 vs N305:** The N305 has slightly higher base clock and power limit. Both work identically — the same Efficiency profile is selected.
 - **Inference speed:** Expect 10–20 tokens/sec on the 2B model. Fast enough for query responses in under a few seconds.

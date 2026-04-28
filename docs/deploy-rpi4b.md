@@ -46,6 +46,7 @@ packages:
 - binutils          # linker tools
 - pkg-config        # library linking during cargo build
 - cmake             # llama-cpp-2 compiles llama.cpp from source
+- qrencode          # QR code for app onboarding
 apt:
   preserve_sources_list: true
   conf: |
@@ -104,7 +105,7 @@ Setup will:
 2. Ask: language → model → Standard/Advanced → remote access (optional)
 3. Generate TLS certificates with your LAN IP in the SAN
 4. Download the model in the background (Edge profile auto-detected)
-5. Build the server in the background (`cargo build --release` — 10–20 min)
+5. Build the server in the background (`cargo build --release` — 60–120 min, llama.cpp compiles from source)
 6. Run the onboarding questionnaire while everything compiles
 7. Install and enable the `ombra` systemd service
 
@@ -137,6 +138,6 @@ The app connects to `ombra.local:8080` on your home network. If you set up DuckD
 
 ## Notes
 
-- **Build time:** 10–20 min.
+- **Build time:** 60–120 min. llama-cpp-2 compiles the full llama.cpp C++ library from source — this dominates the build time on ARM64.
 - **Storage:** model (~1.6 GB) + OS + DB fits on 32 GB. 64 GB is more comfortable for long-term use.
 - **Hardware detection:** `uname -m` returns `aarch64`, RAM ≥ 3 GB → Edge profile auto-selected.
