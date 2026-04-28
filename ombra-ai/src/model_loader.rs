@@ -24,6 +24,7 @@ fn build_engine_config(config: &AppConfig) -> InferenceEngineConfig {
         HardwareProfile::Performance => (8192, 2048),
         HardwareProfile::Efficiency => (4096, 1024),
         HardwareProfile::Edge => (2048, 512),
+        HardwareProfile::Nano => (1024, 256),
     };
 
     InferenceEngineConfig {
@@ -31,7 +32,7 @@ fn build_engine_config(config: &AppConfig) -> InferenceEngineConfig {
         context_size,
         thread_count: detect_optimal_thread_count(),
         max_tokens,
-        chat_template: Some("<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n".to_string()),
+        chat_template: Some(config.hardware_profile.chat_template().to_string()),
     }
 }
 

@@ -1,11 +1,17 @@
 # Deploying Ombra on Raspberry Pi 4B
 
-**Hardware profile:** Edge — Gemma-2-2B Q4_K_M (~1.6 GB)  
-**Recommended hardware:** Raspberry Pi 4B 8GB
+| RAM | Chip code | Hardware profile | Model |
+|-----|-----------|-----------------|-------|
+| 1 GB | SEC928 | — (not supported) | — |
+| 2 GB | D9WHZ / SEC940 | — (not supported) | — |
+| 4 GB | D9WHV | Edge (auto-detected) | Gemma-2-2B Q4_K_M (~1.6 GB) |
+| 8 GB | D9ZCL | Edge (auto-detected) | Gemma-2-2B Q4_K_M (~1.6 GB) |
+
+**Requires 4 GB or 8 GB.** The 1 GB and 2 GB models do not have enough RAM to run the server.
 
 ## What you need
 
-- Raspberry Pi 4B (8GB recommended; 4GB works but is tight during build)
+- Raspberry Pi 4B **4 GB or 8 GB** (see table above)
 - MicroSD card, 32 GB minimum (64 GB+ for long-term use)
 - Power supply: official 15W USB-C
 - Ethernet cable (recommended during setup — Wi-Fi works but is slower for the model download)
@@ -19,15 +25,69 @@ Flash to SD card using [Raspberry Pi Imager](https://www.raspberrypi.com/softwar
 - SSH: enabled
 - Username + password
 
+### user-data file
+
+```yaml
+#cloud-config
+manage_resolv_conf: false
+
+hostname: ombra
+manage_etc_hosts: true
+package_update: true
+packages:
+- avahi-daemon      # ombra.local mDNS resolution on the local network
+- git               # clone the repo
+- curl              # Rust installer + Docker apt repo setup
+- ca-certificates   # HTTPS access to Docker's apt repo
+- gcc               # C compiler — required by the Rust linker
+- g++               # C++ compiler — required by llama.cpp
+- make              # build tool
+- libc6-dev         # C standard library headers
+- binutils          # linker tools
+- pkg-config        # library linking during cargo build
+- cmake             # llama-cpp-2 compiles llama.cpp from source
+apt:
+  preserve_sources_list: true
+  conf: |
+    Acquire {
+      Check-Date "false";
+    };
+timezone: America/Los_Angeles
+keyboard:
+  model: pc105
+  layout: "en"
+users:
+- name: ombra
+  groups: users,adm,dialout,audio,netdev,video,plugdev,cdrom,games,input,gpio,spi,i2c,render,sudo
+  shell: /bin/bash
+  lock_passwd: false
+  passwd: "Ombra"
+enable_ssh: true
+ssh_pwauth: true
+runcmd:
+  - echo "gpu_mem=16" >> /boot/firmware/config.txt
+```
+
 ## 2. Boot and connect
 
-Insert the SD card, connect ethernet, power on. Find the IP on your router or scan with `nmap -sn 192.168.1.0/24`. SSH in:
+Insert the SD card, connect ethernet, power on. Find the IP on your router or use `ping ombra.local` once the Pi has booted. SSH in:
 
 ```bash
-ssh <your-user>@ombra.local
+ssh ombra@ombra.local
 # or
-ssh <your-user>@<ip-address>
+ssh ombra@<ip-address>
 ```
+
+### Update packages
+
+Before proceeding, update the system and reboot if there are kernel updates:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo reboot
+```
+
+SSH back in after the reboot, then continue to step 3.
 
 ## 3. Run setup
 
@@ -43,8 +103,8 @@ Setup will:
 1. Install Docker (official apt repo, not snap) and Rust automatically
 2. Ask: language → model → Standard/Advanced → remote access (optional)
 3. Generate TLS certificates with your LAN IP in the SAN
-4. Download Gemma-2-2B Q4_K_M in the background (auto-detected for ARM64)
-5. Build the server in the background (`cargo build --release` — takes 10–20 min on Pi)
+4. Download the model in the background (Edge profile auto-detected)
+5. Build the server in the background (`cargo build --release` — 10–20 min)
 6. Run the onboarding questionnaire while everything compiles
 7. Install and enable the `ombra` systemd service
 
@@ -77,7 +137,6 @@ The app connects to `ombra.local:8080` on your home network. If you set up DuckD
 
 ## Notes
 
-- **Build time:** first `cargo build --release` takes 10–20 minutes on the Pi. Subsequent builds are faster.
-- **Storage:** model (~1.6 GB) + OS + DB fits comfortably on 32 GB. For a machine you intend to run long-term, 64 GB is more comfortable.
-- **Memory during build:** the linker uses ~3 GB RAM. On a 4 GB Pi this may cause the build to be killed by the OOM killer. If that happens, add swap: `sudo dphys-swapfile swapoff && sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile && sudo dphys-swapfile setup && sudo dphys-swapfile swapon`
-- **Hardware detection:** `uname -m` returns `aarch64` → Edge profile is auto-selected → Q4_K_M model.
+- **Build time:** 10–20 min.
+- **Storage:** model (~1.6 GB) + OS + DB fits on 32 GB. 64 GB is more comfortable for long-term use.
+- **Hardware detection:** `uname -m` returns `aarch64`, RAM ≥ 3 GB → Edge profile auto-selected.

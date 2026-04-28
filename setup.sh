@@ -136,7 +136,7 @@ install_build_tools() {
     info "Installing build tools..."
     $SUDO apt-get update -qq
     $SUDO apt-get install -y -qq \
-        build-essential pkg-config libssl-dev cmake curl openssl \
+        gcc g++ make libc6-dev binutils pkg-config libssl-dev cmake curl openssl \
         clang libclang-dev
 }
 
@@ -167,12 +167,15 @@ check_dependencies() {
 detect_hardware_profile() {
     local arch
     arch="$(uname -m)"
-    if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then echo "Edge"; return; fi
     local ram_gb
     if [[ "$(uname)" == "Darwin" ]]; then
         ram_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
     else
         ram_gb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 ))
+    fi
+    if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
+        (( ram_gb < 3 )) && echo "Nano" || echo "Edge"
+        return
     fi
     (( ram_gb >= 28 )) && echo "Performance" || echo "Efficiency"
 }
@@ -184,6 +187,7 @@ model_info() {
         Performance) echo "bartowski/gemma-2-9b-it-GGUF gemma-2-9b-it-Q8_0.gguf" ;;
         Efficiency)  echo "bartowski/gemma-2-2b-it-GGUF gemma-2-2b-it-Q8_0.gguf" ;;
         Edge)        echo "bartowski/gemma-2-2b-it-GGUF gemma-2-2b-it-Q4_K_M.gguf" ;;
+        Nano)        echo "bartowski/Qwen2.5-1.5B-Instruct-GGUF Qwen2.5-1.5B-Instruct-Q4_K_M.gguf" ;;
     esac
 }
 
@@ -199,11 +203,12 @@ select_model() {
     printf "  %-4s %-14s %-32s %s\n" "No." "Profile" "Model" "Size"
     echo "  ────────────────────────────────────────────────────────────────"
 
-    local profiles=("Edge" "Efficiency" "Performance")
-    local labels=("Edge        — Gemma-2-2B Q4_K_M  (ARM-optimised)" \
-                  "Efficiency  — Gemma-2-2B Q8_0    (balanced)" \
-                  "Performance — Gemma-2-9B Q8_0    (best quality, needs 16+ GB RAM)")
-    local sizes=("~1.6 GB" "~2.8 GB" "~9.8 GB")
+    local profiles=("Nano" "Edge" "Efficiency" "Performance")
+    local labels=("Nano        — Qwen2.5-1.5B Q4_K_M (fits in 2 GB RAM)" \
+                  "Edge        — Gemma-2-2B Q4_K_M   (ARM-optimised, 4+ GB RAM)" \
+                  "Efficiency  — Gemma-2-2B Q8_0     (balanced)" \
+                  "Performance — Gemma-2-9B Q8_0     (best quality, needs 16+ GB RAM)")
+    local sizes=("~1.0 GB" "~1.6 GB" "~2.8 GB" "~9.8 GB")
     local default_num=1
 
     for i in "${!profiles[@]}"; do
@@ -219,9 +224,10 @@ select_model() {
     model_choice="${model_choice:-$default_num}"
 
     case "$model_choice" in
-        1) SELECTED_PROFILE="Edge" ;;
-        2) SELECTED_PROFILE="Efficiency" ;;
-        3) SELECTED_PROFILE="Performance" ;;
+        1) SELECTED_PROFILE="Nano" ;;
+        2) SELECTED_PROFILE="Edge" ;;
+        3) SELECTED_PROFILE="Efficiency" ;;
+        4) SELECTED_PROFILE="Performance" ;;
         *) SELECTED_PROFILE="${profiles[$(( default_num - 1 ))]}" ;;
     esac
 
