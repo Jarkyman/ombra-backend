@@ -4,6 +4,7 @@ mod handlers;
 mod ingestion;
 mod network;
 mod onboarding;
+mod provision;
 mod router;
 mod state;
 mod tls;
@@ -118,6 +119,27 @@ async fn main() {
     };
 
     network::start(&config).await;
+
+    let provision_state = provision::ProvisionState::new(
+        PathBuf::from("provision_token"),
+        config.tls_client_ca_cert_path.clone(),
+        config.tls_client_cert_path.clone(),
+        config.tls_client_key_path.clone(),
+    );
+
+    let provision_addr = SocketAddr::from(([0, 0, 0, 0], config.provision_port));
+    tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(provision_addr)
+            .await
+            .expect("failed to bind provision server");
+        info!(component = "provision", %provision_addr, "provision server listening");
+        axum::serve(
+            listener,
+            provision::build_router(provision_state).into_make_service(),
+        )
+        .await
+        .expect("provision server failed");
+    });
 
     let mtls_config = tls::build_mtls_server_config(&config)
         .expect("failed to build mTLS config — run scripts/generate_dev_certs.sh first");

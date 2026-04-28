@@ -134,6 +134,7 @@ as the AI learns more — but it needs a foundation to start from.
 - [x] mDNS hostname (`ombra.local`) — avahi-daemon installed by setup.sh, cert SAN includes `DNS:ombra.local`, app tries local first and falls back to DDNS hostname
 - [ ] Ombra Relay (future, required for 100% of users) — a minimal relay server hosted under `ombra.io` that handles connection routing only, not data. Data flows directly between app and user's box once the connection is established — the relay only brokers the handshake. One small server can handle thousands of users. Necessary for users behind CGNAT (mobile internet, some cable providers) where UPnP and port forwarding are physically impossible. This is a deliberate infrastructure investment to make when the product goes to market.
 - [ ] Trusted Devices — track which client certificates have connected (by cert CN, stored in SQLite). Expose an API to list and revoke devices. App and CLI can show the list and let the user kick a device off. Currently mTLS ensures only cert-holders can connect, but there is no management UI.
+- [ ] In-app QR code generation — authenticated endpoint on the mTLS server (`POST /provision/rotate`) that writes a new token to `provision_token` and returns the full QR payload (`host`, `port`, `provision_port`, `token`, `ca_fp`). The app renders the QR inline so the user can scan it from a second device without touching the server terminal. Flow: app → POST /provision/rotate (mTLS) → server updates token file → returns payload → app renders QR → second device scans → fetches certs from provision server.
 
 ## Testing
 
@@ -184,6 +185,25 @@ Issues and improvements found during real-hardware and VM testing.
 - [ ] Advanced mode allows manual model selection (any GGUF repo + filename) for power users who want to override the auto-detected profile.
 - [ ] Onboarding questionnaire needs more questions — cover daily routines, hobbies, relationships, goals, communication style etc. to give the AI a richer starting context.
 - [ ] Add `setup.sh --profile` flag to re-enter the onboarding questionnaire at any time after setup, so the user can add or update answers without re-running the full wizard.
+
+## Backend Code Review Action Items
+
+### Security & Vulnerabilities
+- [ ] **`setup.sh` file permissions race condition**: `ombra.toml` is created before `chmod 600` is applied, creating a brief window where the encryption key is readable. **Fix**: Run `umask 077` before creating the config file.
+- [ ] **`setup.sh` model validation**: AI models are downloaded via `curl -L` without checksum validation. **Fix**: Add SHA256/MD5 validation to prevent loading corrupted or tampered GGUF files.
+- [ ] **`ombra.toml` security**: The SQLite encryption key is stored in plaintext next to the database. Document this risk (a full server compromise exposes the DB) or consider secure key injection for production.
+
+### Performance & Optimization
+- [ ] **Fix N+1 query (`get_clusters_by_ids`)**: `ombra-server/src/db/cluster.rs` iterates over IDs running individual `SELECT` queries. **Fix**: Use `sqlx::QueryBuilder` for a single `WHERE id IN (...)` query.
+- [ ] **Fix N+1 query (`assign_transcripts_to_cluster`)**: `ombra-server/src/db/cluster.rs` runs an `UPDATE` per transcript in a loop. **Fix**: Rewrite as a single batch update query to avoid locking SQLite.
+- [ ] **Missing SQLite Transactions**: Saving a cluster and updating transcripts must be wrapped in a single atomic database transaction (`pool.begin().await`) to prevent ghost clusters if the server crashes mid-process.
+
+### Robustness & Error Handling
+- [ ] **`setup.sh` dependency check**: The script assumes Debian/Ubuntu by blindly using `apt-get`. **Fix**: Check `/etc/os-release` first and fail gracefully on unsupported distros (e.g., Arch Linux).
+- [ ] **API Error messages**: Ensure `ombra_common::error::OmbraError` does not leak raw database error strings to the client, preventing potential schema exposure.
+
+### Architecture & Code Quality
+- [ ] **Stale open clusters on restart**: Hardcoded `cluster_timeout_minutes` means open clusters might get stuck if the server restarts. **Fix**: Run a sweep on server startup to close outdated open clusters.
 
 ## Pre-production cleanup
 - [ ] Fix `dead_code` warnings in `entity.rs` (first_seen, last_seen), `transcript.rs` (session_id, raw_whisper_text, detected_language, recorded_at, created_at), and `user_profile.rs` (id, created_at) — either use the fields or remove them. Run `cargo clippy -- -D warnings` with zero warnings before shipping.

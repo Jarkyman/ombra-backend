@@ -613,30 +613,22 @@ wait_for_ready() {
 # ── QR code ──────────────────────────────────────────────────────────────────
 
 show_qr() {
-    if ! command -v qrencode >/dev/null 2>&1; then
-        warning "qrencode not installed — skipping QR code. Install with: sudo apt install qrencode"
-        return
+    echo ""
+    echo -e "${BOLD}  Connect the Ombra app:${NC}"
+    echo ""
+    echo "  1. Start the server:"
+    local _is_wsl=false
+    grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
+    if [[ "$(uname)" == "Darwin" ]] || [[ "$_is_wsl" == "true" ]]; then
+        echo "     ./target/release/ombra-server"
+    else
+        echo "     sudo systemctl start ombra"
     fi
-
-    local port
-    port="$(grep 'server_port' "$CONFIG_FILE" 2>/dev/null | awk -F'= ' '{print $2}' | tr -d ' ')"
-    port="${port:-8080}"
-
-    local ca_cert client_cert client_key
-    ca_cert="$(openssl base64 -A -in "$CERTS_DIR/ca.crt")"
-    client_cert="$(openssl base64 -A -in "$CERTS_DIR/client.crt")"
-    client_key="$(openssl base64 -A -in "$CERTS_DIR/client.key")"
-
-    local payload
-    payload="$(printf '{"host":"ombra.local","port":%s,"ca_cert":"%s","client_cert":"%s","client_key":"%s"}' \
-        "$port" "$ca_cert" "$client_cert" "$client_key")"
-
     echo ""
-    echo -e "${BOLD}  Scan with the Ombra app to connect:${NC}"
+    echo "  2. Generate the connection QR code:"
+    echo "     bash show-qr.sh"
     echo ""
-    qrencode -t UTF8 "$payload"
-    echo ""
-    echo -e "  ${DIM}Show again: bash show-qr.sh${NC}"
+    echo "  3. Scan with the Ombra app"
     echo ""
 }
 

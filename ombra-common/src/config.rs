@@ -42,9 +42,19 @@ pub struct AppConfig {
     pub tls_server_cert_path: PathBuf,
     pub tls_server_key_path: PathBuf,
     pub tls_client_ca_cert_path: PathBuf,
+    #[serde(default = "default_client_cert_path")]
+    pub tls_client_cert_path: PathBuf,
+    #[serde(default = "default_client_key_path")]
+    pub tls_client_key_path: PathBuf,
+    #[serde(default = "default_provision_port")]
+    pub provision_port: u16,
     pub encryption_key: String,
     pub ddns: Option<DdnsConfig>,
 }
+
+fn default_client_cert_path() -> PathBuf { PathBuf::from("certs/client.crt") }
+fn default_client_key_path() -> PathBuf { PathBuf::from("certs/client.key") }
+fn default_provision_port() -> u16 { 8081 }
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -62,6 +72,9 @@ impl Default for AppConfig {
             tls_server_cert_path: PathBuf::from("certs/server.crt"),
             tls_server_key_path: PathBuf::from("certs/server.key"),
             tls_client_ca_cert_path: PathBuf::from("certs/client-ca.crt"),
+            tls_client_cert_path: default_client_cert_path(),
+            tls_client_key_path: default_client_key_path(),
+            provision_port: default_provision_port(),
             encryption_key: encryption::generate_key(),
             ddns: None,
         }
