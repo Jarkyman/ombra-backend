@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Ombra install bootstrap
-# curl -sSf https://get.ombra.io | bash
+# curl -sSf https://raw.githubusercontent.com/Jarkyman/ombra-backend/main/install.sh | bash
 set -euo pipefail
 
-REPO_URL="https://github.com/yourusername/ombra-backend"
+REPO_URL="https://github.com/Jarkyman/ombra-backend"
 INSTALL_DIR="$HOME/ombra"
 CARGO_ENV="$HOME/.cargo/env"
 SUDO=""

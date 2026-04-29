@@ -36,7 +36,7 @@ SSH back in after the reboot, then continue.
 SSH in or open a terminal directly, then run:
 
 ```bash
-curl -sSf https://get.ombra.io | bash
+curl -sSf https://raw.githubusercontent.com/Jarkyman/ombra-backend/main/install.sh | bash
 ```
 
 The installer will:
@@ -84,4 +84,4 @@ Scan with the Ombra app. The app connects to `ombra.local:8080` locally. With Du
 - **Response quality:** This is the highest-quality profile. Responses are noticeably richer than the 2B model.
 - **Inference speed:** Ryzen 7 8700G has 16 threads. Expect 15–30 tokens/sec for the 9B model — fast enough for real-time query responses.
 - **Power:** The 8700G idles at ~10–15W, full load ~45–65W. Suitable for always-on home server use.
-- **Re-running setup:** Running `curl -sSf https://get.ombra.io | bash` again will pull the latest code and re-run the wizard. Existing config and certs are not overwritten.
+- **Re-running setup:** Running `curl -sSf https://raw.githubusercontent.com/Jarkyman/ombra-backend/main/install.sh | bash` again will pull the latest code and re-run the wizard. Existing config and certs are not overwritten.

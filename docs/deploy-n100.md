@@ -36,7 +36,7 @@ SSH back in after the reboot, then continue.
 SSH in or open a terminal directly, then run:
 
 ```bash
-curl -sSf https://get.ombra.io | bash
+curl -sSf https://raw.githubusercontent.com/Jarkyman/ombra-backend/main/install.sh | bash
 ```
 
 The installer will:
@@ -86,4 +86,4 @@ Scan with the Ombra app. The app connects to `ombra.local:8080` locally. With Du
 - **Power:** N100 idles at 4–6W. One of the most power-efficient options for an always-on server — cheaper to run than a light bulb.
 - **eMMC vs SSD:** Many N100 mini PCs ship with eMMC storage. Builds and model loading are noticeably faster on an NVMe SSD. Worth the upgrade for a permanent setup.
 - **16 GB RAM:** If your N100 device has 16 GB, the hardware detector still selects Efficiency (threshold is 28 GB for Performance). You can manually select Performance in setup if you want to run the 9B model, but inference will be slower than on the 8700G.
-- **Re-running setup:** Running `curl -sSf https://get.ombra.io | bash` again will pull the latest code and re-run the wizard. Existing config and certs are not overwritten.
+- **Re-running setup:** Running `curl -sSf https://raw.githubusercontent.com/Jarkyman/ombra-backend/main/install.sh | bash` again will pull the latest code and re-run the wizard. Existing config and certs are not overwritten.

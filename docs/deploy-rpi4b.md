@@ -95,7 +95,7 @@ SSH back in after the reboot, then continue to step 3.
 ## 3. Run setup
 
 ```bash
-curl -sSf https://get.ombra.io | bash
+curl -sSf https://raw.githubusercontent.com/Jarkyman/ombra-backend/main/install.sh | bash
 ```
 
 The installer will:
@@ -149,4 +149,4 @@ The app connects to `ombra.local:8080` on your home network. If you set up DuckD
 
 - **Storage:** model (~1.6 GB) + OS + DB fits on 32 GB. 64 GB is more comfortable for long-term use.
 - **Hardware detection:** `uname -m` returns `aarch64`, RAM ≥ 3 GB → Edge profile auto-selected.
-- **Re-running setup:** Running `curl -sSf https://get.ombra.io | bash` again will pull the latest code and re-run the wizard. Existing config and certs are not overwritten.
+- **Re-running setup:** Running `curl -sSf https://raw.githubusercontent.com/Jarkyman/ombra-backend/main/install.sh | bash` again will pull the latest code and re-run the wizard. Existing config and certs are not overwritten.

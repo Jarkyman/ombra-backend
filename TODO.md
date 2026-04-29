@@ -139,7 +139,8 @@ as the AI learns more — but it needs a foundation to start from.
 - [x] `setup.sh` — legacy wizard (superseded by `install.sh` + `ombra install`)
 - [x] Model download logic — detect hardware profile and pull correct GGUF file, user can override
 - [x] Config and user profile written with `0o600` permissions (no world-readable window)
-- [ ] (S) [Infrastructure]: Update GitHub repo URL in `install.sh` (currently a placeholder)
+- [x] `install.sh` repo URL — points to `https://github.com/Jarkyman/ombra-backend`
+- [ ] (C) [Infrastructure]: Register `get.ombra.io` and set up redirect to raw GitHub install.sh — so the install command becomes `curl -sSf https://get.ombra.io | bash`
 - [x] `generate_dev_certs.sh` auto-detects server LAN IP and includes it in cert SAN — mobile app can connect over local network
 - [x] UPnP automatic port mapping — `network/upnp.rs`, uses `igd` crate, detects local IP via UDP socket trick, logs warning if router doesn't support UPnP (server still works locally)
 - [x] DDNS — `network/ddns.rs` + `network/mod.rs`. DuckDNS update loop every 5 min. `DnsUpdater` trait abstraction for future `OmbraDns`. `AppConfig` fields: `ddns: Option<DdnsConfig>` with `provider`, `token`, `subdomain`.

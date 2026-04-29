@@ -35,7 +35,7 @@ Make sure you are in the Linux home directory — not on the Windows filesystem 
 
 ```bash
 cd ~
-curl -sSf https://get.ombra.io | bash
+curl -sSf https://raw.githubusercontent.com/Jarkyman/ombra-backend/main/install.sh | bash
 ```
 
 The installer downloads Ombra to `~/ombra`, builds the setup wizard, and launches an interactive terminal UI. Follow the wizard to choose your model, configure the server, and set up your profile.
