@@ -1,4 +1,5 @@
 pub mod clusters;
+pub mod entities;
 pub mod health;
 pub mod query;
 pub mod sessions;

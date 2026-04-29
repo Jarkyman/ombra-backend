@@ -87,7 +87,18 @@ impl ClusterProcessor {
 
         let transcript_texts: Vec<&str> = transcripts.iter().map(|t| t.content.as_str()).collect();
         let language = detect_iso639(&transcript_texts);
-        let score = self.score_cluster(&transcript_texts).await?;
+        let score = match self.score_cluster(&transcript_texts).await {
+            Ok(s) => s,
+            Err(error) => {
+                tracing::warn!(cluster_id = %open_cluster.cluster_id, %error, "cluster scoring failed — using fallback");
+                let summary: String = transcript_texts.join(" ").chars().take(200).collect();
+                ClusterScoreResponse {
+                    event_type: "unclassified".to_string(),
+                    relevance_score: 0.5,
+                    event_summary: summary,
+                }
+            }
+        };
 
         tracing::info!(
             cluster_id = %open_cluster.cluster_id,

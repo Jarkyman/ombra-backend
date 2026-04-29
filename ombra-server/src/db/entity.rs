@@ -10,6 +10,8 @@ pub struct Entity {
     pub id: String,
     pub name: String,
     pub entity_type: String,
+    pub first_seen: i64,
+    pub last_seen: i64,
     pub encounter_count: i64,
     pub profile_summary: Option<String>,
 }
@@ -111,6 +113,23 @@ pub async fn get_entities_by_ids(
         .fetch_all(pool)
         .await
         .map_err(|e| OmbraError::Storage(format!("get entities by ids: {e}")))
+}
+
+pub async fn list_entities(pool: &DatabasePool) -> Result<Vec<Entity>, OmbraError> {
+    sqlx::query_as::<_, Entity>(
+        "SELECT * FROM entities ORDER BY encounter_count DESC, last_seen DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| OmbraError::Storage(format!("list entities: {e}")))
+}
+
+pub async fn get_entity_by_id(pool: &DatabasePool, id: &str) -> Result<Option<Entity>, OmbraError> {
+    sqlx::query_as::<_, Entity>("SELECT * FROM entities WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| OmbraError::Storage(format!("get entity: {e}")))
 }
 
 pub async fn get_cluster_summaries_for_entity(

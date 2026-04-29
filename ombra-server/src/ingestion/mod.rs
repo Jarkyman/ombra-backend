@@ -41,6 +41,30 @@ impl IngestionPipeline {
         }
     }
 
+    pub async fn flush_session(&self, session_id: &str) -> Result<(), OmbraError> {
+        let cluster = {
+            let mut manager = self
+                .cluster_manager
+                .lock()
+                .map_err(|_| OmbraError::Storage("cluster manager lock poisoned".to_string()))?;
+            manager.close_cluster(session_id)
+        };
+
+        if let Some(cluster) = cluster {
+            tracing::info!(
+                cluster_id = %cluster.cluster_id,
+                session_id = %session_id,
+                transcript_count = cluster.transcript_ids.len(),
+                "session disconnected — flushing open cluster"
+            );
+            if let Err(error) = self.cluster_sender.send(cluster).await {
+                tracing::error!(%error, "cluster channel closed unexpectedly during flush");
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn process(&self, chunk: IncomingTranscriptChunk) -> Result<(), OmbraError> {
         if is_empty_transcript(&chunk.text) {
             return Ok(());

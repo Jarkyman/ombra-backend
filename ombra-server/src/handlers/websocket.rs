@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -16,6 +18,7 @@ pub async fn handle_transcript_stream(
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
     let mut event_rx = state.event_broadcast.subscribe();
+    let mut active_sessions: HashSet<String> = HashSet::new();
 
     loop {
         select! {
@@ -24,6 +27,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<IncomingTranscriptChunk>(&text) {
                             Ok(chunk) => {
+                                active_sessions.insert(chunk.session_id.clone());
                                 if let Err(error) = state.ingestion_pipeline.process(chunk).await {
                                     tracing::error!(%error, "ingestion failed");
                                 }
@@ -54,6 +58,12 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
+        }
+    }
+
+    for session_id in active_sessions {
+        if let Err(error) = state.ingestion_pipeline.flush_session(&session_id).await {
+            tracing::warn!(%error, %session_id, "failed to flush session on disconnect");
         }
     }
 }

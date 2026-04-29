@@ -10,7 +10,7 @@ use tower_http::trace::TraceLayer;
 use tracing::Span;
 use uuid::Uuid;
 
-use crate::handlers::{clusters, health, query, sessions, settings, websocket};
+use crate::handlers::{clusters, entities, health, query, sessions, settings, websocket};
 use crate::state::AppState;
 
 pub fn build(state: AppState) -> Router {
@@ -23,6 +23,8 @@ pub fn build(state: AppState) -> Router {
         .route("/sessions/:session_id/transcripts", get(sessions::list_transcripts))
         .route("/clusters", get(clusters::list))
         .route("/clusters/:id", get(clusters::get))
+        .route("/entities", get(entities::list))
+        .route("/entities/:id", get(entities::get))
         .route("/settings", get(settings::get))
         .route("/settings", patch(settings::update))
         .layer(

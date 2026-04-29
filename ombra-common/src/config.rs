@@ -94,8 +94,7 @@ impl AppConfig {
         let content = toml::to_string_pretty(self)
             .map_err(|e| OmbraError::Storage(format!("serialize config: {e}")))?;
 
-        std::fs::write(path, content)
-            .map_err(|e| OmbraError::Storage(format!("write config: {e}")))
+        write_private_file(path, &content)
     }
 
     pub fn model_path(&self) -> PathBuf {
@@ -109,6 +108,27 @@ impl AppConfig {
 
     pub fn encryption_key_bytes(&self) -> Result<[u8; 32], OmbraError> {
         encryption::parse_key(&self.encryption_key)
+    }
+}
+
+fn write_private_file(path: &Path, content: &str) -> Result<(), OmbraError> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .and_then(|mut f| f.write_all(content.as_bytes()))
+            .map_err(|e| OmbraError::Storage(format!("write config: {e}")))
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, content)
+            .map_err(|e| OmbraError::Storage(format!("write config: {e}")))
     }
 }
 

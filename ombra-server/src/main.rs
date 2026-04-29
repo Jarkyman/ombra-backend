@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use axum_server::tls_rustls::RustlsConfig;
 use tokio::sync::{broadcast, mpsc};
@@ -80,9 +81,9 @@ async fn main() {
     );
 
     let vector_store = Arc::new(
-        QdrantVectorStore::connect(&config.qdrant_url, "clusters")
+        connect_qdrant_with_retry(&config.qdrant_url, "clusters", 8, Duration::from_secs(3))
             .await
-            .expect("failed to connect to Qdrant"),
+            .expect("failed to connect to Qdrant after retries"),
     );
 
     let (cluster_sender, cluster_receiver) = mpsc::channel(CLUSTER_CHANNEL_BUFFER);
@@ -156,6 +157,28 @@ async fn main() {
         .serve(router::build(app_state).into_make_service())
         .await
         .expect("server failed");
+}
+
+async fn connect_qdrant_with_retry(
+    url: &str,
+    collection: &str,
+    attempts: u32,
+    delay: Duration,
+) -> Result<QdrantVectorStore, ombra_common::error::OmbraError> {
+    let mut last_error = None;
+    for attempt in 1..=attempts {
+        match QdrantVectorStore::connect(url, collection).await {
+            Ok(store) => return Ok(store),
+            Err(error) => {
+                tracing::warn!(attempt, %error, delay_secs = delay.as_secs(), "Qdrant not ready — retrying");
+                last_error = Some(error);
+                if attempt < attempts {
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+    }
+    Err(last_error.unwrap())
 }
 
 async fn sweep_stale_clusters(pool: &db::DatabasePool, cluster_sender: &mpsc::Sender<OpenCluster>) {

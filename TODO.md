@@ -19,6 +19,13 @@
 - [x] `GET /sessions/:id/transcripts` — list raw transcripts in a session so the app/debug tools can verify ingestion before clusters are ready
 - [x] Processing status + app callback — when a cluster finishes AI processing, push a WebSocket event to connected clients (`{"event": "cluster_ready", "session_id": "...", "cluster_id": "..."}`) so the app can refresh without polling
 - [x] Wire up `tower-http` tracing middleware with JSONL log format
+- [x] (S) [BACKEND]: Close open clusters on WebSocket disconnect — `flush_session()` on `IngestionPipeline`; WebSocket handler tracks active session IDs and flushes on disconnect
+- [x] (S) [BACKEND, Infrastructure]: Qdrant startup retry — `connect_qdrant_with_retry()` in main.rs; 8 attempts × 3s backoff before panic
+- [x] (S) [BACKEND, AI]: Cluster processing fallback — if LLM returns garbled JSON, falls back to `event_type="unclassified"`, `relevance_score=0.5`, `event_summary` = truncated raw text
+- [x] (S) [BACKEND]: `GET /entities` and `GET /entities/:id` — `handlers/entities.rs`, wired in router
+- [x] (S) [Security, BACKEND]: `config.save()` file permissions — `write_private_file()` uses `OpenOptions::mode(0o600)` on Unix
+- [ ] (C) [AI, BACKEND]: score_cluster + extract_entities in parallel — both are independent LLM calls on the same data; run with `tokio::join!` for ~2x faster cluster processing
+- [ ] (C) [BACKEND, AI]: Query response streaming — stream LLM tokens via SSE instead of buffering the full response; eliminates first-token latency for the user
 
 ## ombra-ai
 
@@ -106,7 +113,7 @@ Context (work / family / friends / project) is inferred from when and where enco
 - [ ] (C) [CLI, UI]: Implement Ratatui dashboard — real-time CPU/RAM/NPU telemetry
 - [ ] (C) [CLI, UI]: Add JSONL log stream panel to dashboard
 - [ ] (C) [CLI, UI]: Add model deployment status panel to dashboard
-- [ ] (S) [CLI]: Implement `Status` command — query server health + loaded model info
+- [ ] (S) [CLI]: `ombra status` — print: server health (`/health`), loaded model name, Qdrant reachability, systemd service state, last cluster processed timestamp, cluster queue depth
 - [x] (M) [CLI, Infrastructure]: Add `Install` command — ratatui TUI wizard: model selection, language, remote access, certs, background Qdrant + model download + server build, onboarding questionnaire, systemd service install
 
 ## User Onboarding & Personalization
@@ -146,6 +153,8 @@ as the AI learns more — but it needs a foundation to start from.
 - [x] DDNS — `network/ddns.rs` + `network/mod.rs`. DuckDNS update loop every 5 min. `DnsUpdater` trait abstraction for future `OmbraDns`. `AppConfig` fields: `ddns: Option<DdnsConfig>` with `provider`, `token`, `subdomain`.
 - [x] DuckDNS is optional — user answers N to "Set up remote access?" and server runs locally only via `ombra.local` and LAN IP
 - [x] mDNS hostname (`ombra.local`) — avahi-daemon installed by setup.sh, cert SAN includes `DNS:ombra.local`, app tries local first and falls back to DDNS hostname
+- [ ] (S) [CLI, Infrastructure]: `ombra upgrade` command — `git pull && cargo build --release`, then `sudo systemctl restart ombra` (or print manual instructions on WSL2)
+- [ ] (S) [CLI]: `ombra status` — show: server reachability, loaded model name, Qdrant status, cluster queue depth, systemd service state, last cluster processed timestamp
 - [ ] (W) [Infrastructure]: Ombra Relay (future, required for 100% of users) — a minimal relay server hosted under `ombra.io` that handles connection routing only, not data. Data flows directly between app and user's box once the connection is established — the relay only brokers the handshake. One small server can handle thousands of users. Necessary for users behind CGNAT (mobile internet, some cable providers) where UPnP and port forwarding are physically impossible. This is a deliberate infrastructure investment to make when the product goes to market.
 - [ ] (S) [BACKEND, Security]: Trusted Devices — track which client certificates have connected (by cert CN, stored in SQLite). Expose an API to list and revoke devices. App and CLI can show the list and let the user kick a device off. Currently mTLS ensures only cert-holders can connect, but there is no management UI.
 - [ ] (C) [BACKEND, UI]: In-app QR code generation — authenticated endpoint on the mTLS server (`POST /provision/rotate`) that writes a new token to `provision_token` and returns the full QR payload (`host`, `port`, `provision_port`, `token`, `ca_fp`). The app renders the QR inline so the user can scan it from a second device without touching the server terminal. Flow: app → POST /provision/rotate (mTLS) → server updates token file → returns payload → app renders QR → second device scans → fetches certs from provision server.
@@ -239,4 +248,5 @@ Issues and improvements found during real-hardware and VM testing.
 - [ ] (W) [AI]: Picture analysis, for computer and phone
 - [ ] (W) [BACKEND]: How much access can I get to mobile data? (battery drain)
 - [ ] (W) [UI, AI]: 'Hey Ombra' Function, to ask questions (needs Notifications first)
-- [ ] (W) [UI, BACKEND]: Admin panel (local host setup of Ombra, where I can see logs, clusters, threshold values, etc. A bit like a router admin page)
+- [ ] (C) [AI, BACKEND]: Fuzzy entity matching — before creating a new entity, check if a close variant already exists ("Lars" vs "Lars Hansen"); use string similarity + LLM confirmation if ambiguous
+- [ ] (M) [UI, BACKEND]: Admin panel — web UI served by the backend, accessible at `ombra.local` or LAN IP (local network only). Shows: live logs, clusters, entity graph, system health, threshold config. Like a router admin page but for your second brain.
