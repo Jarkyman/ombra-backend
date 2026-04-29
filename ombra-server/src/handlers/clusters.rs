@@ -44,7 +44,7 @@ pub async fn list(
         }
         Err(error) => {
             tracing::error!(%error, "list clusters failed");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            super::internal_error()
         }
     }
 }
@@ -55,10 +55,10 @@ pub async fn get(
 ) -> impl IntoResponse {
     match db::cluster::get_cluster_by_id(&state.database_pool, &cluster_id).await {
         Ok(Some(cluster)) => (StatusCode::OK, Json(into_response(cluster))).into_response(),
-        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Ok(None) => super::not_found(),
         Err(error) => {
             tracing::error!(%error, "get cluster failed");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            super::internal_error()
         }
     }
 }

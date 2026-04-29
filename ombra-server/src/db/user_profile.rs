@@ -6,7 +6,6 @@ use super::DatabasePool;
 
 #[derive(Debug, FromRow, Clone)]
 pub struct UserProfile {
-    pub id: String,
     pub name: Option<String>,
     pub occupation: Option<String>,
     pub location: Option<String>,
@@ -14,7 +13,6 @@ pub struct UserProfile {
     pub current_projects: Option<String>,
     pub additional: Option<String>,
     pub profile_summary: Option<String>,
-    pub created_at: i64,
 }
 
 pub struct InsertUserProfileParams {

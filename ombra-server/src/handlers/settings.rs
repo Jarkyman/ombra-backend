@@ -1,7 +1,6 @@
 use axum::{
     Json,
     extract::State,
-    http::StatusCode,
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -53,7 +52,7 @@ pub async fn update(
     let config = state.config.read().unwrap();
     if let Err(error) = config.save(&state.config_path) {
         tracing::error!(%error, "failed to persist settings to disk");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        return super::internal_error();
     }
 
     Json(SettingsResponse {

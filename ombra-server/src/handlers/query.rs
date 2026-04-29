@@ -36,7 +36,7 @@ pub async fn handle(
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(error) => {
             tracing::error!(%error, "query failed");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            super::internal_error()
         }
     }
 }

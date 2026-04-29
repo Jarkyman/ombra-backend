@@ -9,6 +9,7 @@ mod router;
 mod state;
 mod tls;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -16,7 +17,7 @@ use std::sync::{Arc, RwLock};
 use axum_server::tls_rustls::RustlsConfig;
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
-use rustls;
+use uuid::Uuid;
 
 use events::ServerEvent;
 
@@ -27,7 +28,7 @@ use ombra_ai::{
 };
 use ombra_common::config::AppConfig;
 
-use ingestion::{cluster_processor::ClusterProcessor, IngestionPipeline};
+use ingestion::{cluster::OpenCluster, cluster_processor::ClusterProcessor, IngestionPipeline};
 use state::AppState;
 
 const CONFIG_PATH: &str = "ombra.toml";
@@ -99,6 +100,8 @@ async fn main() {
 
     cluster_processor.spawn(cluster_receiver);
 
+    sweep_stale_clusters(&database_pool, &cluster_sender).await;
+
     let ingestion_pipeline = Arc::new(IngestionPipeline::new(
         database_pool.clone(),
         config.cluster_timeout_minutes,
@@ -153,4 +156,46 @@ async fn main() {
         .serve(router::build(app_state).into_make_service())
         .await
         .expect("server failed");
+}
+
+async fn sweep_stale_clusters(pool: &db::DatabasePool, cluster_sender: &mpsc::Sender<OpenCluster>) {
+    let stubs = match db::transcript::get_unassigned_transcript_stubs(pool).await {
+        Ok(s) => s,
+        Err(error) => {
+            tracing::warn!(%error, "stale cluster sweep failed — skipping");
+            return;
+        }
+    };
+
+    if stubs.is_empty() {
+        return;
+    }
+
+    let mut by_session: HashMap<String, Vec<(String, i64)>> = HashMap::new();
+    for stub in stubs {
+        by_session
+            .entry(stub.session_id)
+            .or_default()
+            .push((stub.id, stub.recorded_at));
+    }
+
+    let session_count = by_session.len();
+    for (session_id, transcripts) in by_session {
+        let started_at = transcripts.iter().map(|(_, t)| *t).min().unwrap_or(0);
+        let transcript_ids = transcripts.into_iter().map(|(id, _)| id).collect();
+
+        let cluster = OpenCluster {
+            cluster_id: Uuid::new_v4().to_string(),
+            session_id: session_id.clone(),
+            started_at,
+            transcript_ids,
+            last_activity: std::time::Instant::now(),
+        };
+
+        if let Err(error) = cluster_sender.send(cluster).await {
+            tracing::error!(session_id = %session_id, %error, "failed to queue stale cluster on startup");
+        }
+    }
+
+    tracing::info!(session_count, "stale clusters swept and queued for processing");
 }

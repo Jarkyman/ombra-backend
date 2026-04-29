@@ -4,6 +4,7 @@ use clap::Subcommand;
 pub enum OmbraCommand {
     Dashboard,
     Status,
+    Install,
 }
 
 pub async fn print_status() {

@@ -27,6 +27,8 @@ Flash to SD card using [Raspberry Pi Imager](https://www.raspberrypi.com/softwar
 
 ### user-data file
 
+The packages below are also installed by the Ombra setup script — pre-installing them here speeds up setup.
+
 ```yaml
 #cloud-config
 manage_resolv_conf: false
@@ -36,8 +38,8 @@ manage_etc_hosts: true
 package_update: true
 packages:
 - avahi-daemon      # ombra.local mDNS resolution on the local network
-- git               # clone the repo
-- curl              # Rust installer + Docker apt repo setup
+- git               # required by the Ombra installer
+- curl              # required by the Ombra installer
 - ca-certificates   # HTTPS access to Docker's apt repo
 - gcc               # C compiler — required by the Rust linker
 - g++               # C++ compiler — required by llama.cpp
@@ -92,22 +94,23 @@ SSH back in after the reboot, then continue to step 3.
 
 ## 3. Run setup
 
-Clone the repo and run the wizard:
-
 ```bash
-git clone https://github.com/Jarkyman/ombra-backend.git
-cd ombra-backend
-bash setup.sh
+curl -sSf https://get.ombra.io | bash
 ```
 
-Setup will:
-1. Install Docker (official apt repo, not snap) and Rust automatically
-2. Ask: language → model → Standard/Advanced → remote access (optional)
-3. Generate TLS certificates with your LAN IP in the SAN
-4. Download the model in the background (Edge profile auto-detected)
-5. Build the server in the background (`cargo build --release` — 60–120 min, llama.cpp compiles from source)
-6. Run the onboarding questionnaire while everything compiles
-7. Install and enable the `ombra` systemd service
+The installer will:
+1. Install Docker (official apt repo, not snap) and Rust if not already present
+2. Download Ombra to `~/ombra` and build the setup wizard
+3. Launch an interactive terminal UI where you:
+   - Choose your AI model (Edge profile auto-detected and recommended)
+   - Set the response language
+   - Optionally configure remote access via DuckDNS
+4. Generate TLS certificates with your LAN IP in the SAN
+5. Start Qdrant, download the model, and build the server in the background
+6. Ask onboarding questions while everything runs — Ombra learns who you are before it's even finished
+7. Install and enable the `ombra` systemd service so it starts automatically on boot
+
+> **Build time:** 60–120 min. llama-cpp-2 compiles the full llama.cpp C++ library from source — this dominates the build time on ARM64. The onboarding questionnaire keeps you busy while it works.
 
 ## 4. Start the server
 
@@ -119,25 +122,31 @@ sudo systemctl status ombra
 Health check (from the same machine):
 
 ```bash
-curl --cacert certs/ca.crt \
-     --cert certs/client.crt --key certs/client.key \
+curl --cacert ~/ombra/certs/ca.crt \
+     --cert ~/ombra/certs/client.crt --key ~/ombra/certs/client.key \
      https://localhost:8080/health
 ```
 
 ## 5. Connect the mobile app
 
-Copy these three files to your phone via AirDrop, email, or scp:
+Run the QR code script to display the connection QR code:
+
+```bash
+bash ~/ombra/show-qr.sh
+```
+
+Scan with the Ombra app. Alternatively, copy these three files to your phone manually:
 
 ```
-certs/client.crt
-certs/client.key
-certs/ca.crt
+~/ombra/certs/client.crt
+~/ombra/certs/client.key
+~/ombra/certs/ca.crt
 ```
 
 The app connects to `ombra.local:8080` on your home network. If you set up DuckDNS during setup, it falls back to `<subdomain>.duckdns.org:8080` elsewhere.
 
 ## Notes
 
-- **Build time:** 60–120 min. llama-cpp-2 compiles the full llama.cpp C++ library from source — this dominates the build time on ARM64.
 - **Storage:** model (~1.6 GB) + OS + DB fits on 32 GB. 64 GB is more comfortable for long-term use.
 - **Hardware detection:** `uname -m` returns `aarch64`, RAM ≥ 3 GB → Edge profile auto-selected.
+- **Re-running setup:** Running `curl -sSf https://get.ombra.io | bash` again will pull the latest code and re-run the wizard. Existing config and certs are not overwritten.

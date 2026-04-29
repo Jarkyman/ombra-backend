@@ -98,7 +98,7 @@ impl ClusterProcessor {
 
         let closed_at = current_unix_timestamp();
 
-        let cluster = db::cluster::insert_cluster(
+        let cluster = db::cluster::insert_cluster_with_transcripts(
             &self.database_pool,
             InsertClusterParams {
                 session_id: &open_cluster.session_id,
@@ -109,13 +109,7 @@ impl ClusterProcessor {
                 event_summary: &score.event_summary,
                 language: &language,
             },
-        )
-        .await?;
-
-        db::cluster::assign_transcripts_to_cluster(
-            &self.database_pool,
             &open_cluster.transcript_ids,
-            &cluster.id,
         )
         .await?;
 

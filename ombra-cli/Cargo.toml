@@ -13,3 +13,4 @@ ombra-common = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 ratatui = "0.28"
 crossterm = "0.27"
+toml = "0.8"

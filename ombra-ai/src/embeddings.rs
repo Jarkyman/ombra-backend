@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -19,10 +19,10 @@ pub struct FastEmbedEngine {
 }
 
 impl FastEmbedEngine {
-    pub fn load(models_directory: &PathBuf) -> Result<Self, OmbraError> {
+    pub fn load(models_directory: &Path) -> Result<Self, OmbraError> {
         let model = TextEmbedding::try_new(
             TextInitOptions::new(EmbeddingModel::NomicEmbedTextV15)
-                .with_cache_dir(models_directory.clone())
+                .with_cache_dir(models_directory.to_path_buf())
                 .with_show_download_progress(true),
         )
         .map_err(|e| OmbraError::Inference(format!("load embedding model: {e}")))?;

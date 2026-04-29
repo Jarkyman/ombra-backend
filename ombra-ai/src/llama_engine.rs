@@ -109,10 +109,10 @@ fn run_inference(
 
     let mut output = String::new();
     let eos_token = model.token_eos();
-    let mut cursor = prompt_tokens.len() as i32;
+    let start_pos = prompt_tokens.len() as i32;
     let mut decoder = encoding_rs::UTF_8.new_decoder();
 
-    for _ in 0..max_tokens {
+    for cursor in start_pos..(start_pos + max_tokens) {
         let next_token: LlamaToken = sampler.sample(&ctx, batch.n_tokens() - 1);
         sampler.accept(next_token);
 
@@ -133,8 +133,6 @@ fn run_inference(
 
         ctx.decode(&mut batch)
             .map_err(|e| OmbraError::Inference(format!("decode: {e}")))?;
-
-        cursor += 1;
     }
 
     Ok(output)

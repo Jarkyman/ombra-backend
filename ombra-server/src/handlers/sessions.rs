@@ -46,7 +46,7 @@ pub async fn list(State(state): State<AppState>) -> impl IntoResponse {
         }
         Err(error) => {
             tracing::error!(%error, "list sessions failed");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            super::internal_error()
         }
     }
 }
@@ -65,7 +65,7 @@ pub async fn list_clusters(
         }
         Err(error) => {
             tracing::error!(%error, "list session clusters failed");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            super::internal_error()
         }
     }
 }
@@ -89,7 +89,7 @@ pub async fn list_transcripts(
             Ok(k) => k,
             Err(error) => {
                 tracing::error!(%error, "invalid encryption key");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                return super::internal_error();
             }
         }
     };
@@ -110,7 +110,7 @@ pub async fn list_transcripts(
         }
         Err(error) => {
             tracing::error!(%error, "list session transcripts failed");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            super::internal_error()
         }
     }
 }

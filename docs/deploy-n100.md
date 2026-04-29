@@ -33,23 +33,25 @@ SSH back in after the reboot, then continue.
 
 ## 3. Run setup
 
-SSH in or open a terminal directly:
+SSH in or open a terminal directly, then run:
 
 ```bash
-git clone https://github.com/Jarkyman/ombra-backend.git
-cd ombra-backend
-bash setup.sh
+curl -sSf https://get.ombra.io | bash
 ```
 
-Setup will:
-1. Install Docker (official apt repo) and Rust automatically
-2. Detect x86_64 + 8–16 GB RAM → recommend **Efficiency** profile
-3. Ask: language → model → Standard/Advanced → remote access (optional)
-4. Download Gemma-2-2B Q8_0 in the background (~2.8 GB)
-5. Build the server in the background (`cargo build --release` — 30–60 min on N100, llama.cpp compiles from source)
-6. Run the onboarding questionnaire while everything builds
-7. Install and enable the `ombra` systemd service
-8. Show a QR code to connect the mobile app
+The installer will:
+1. Install Docker (official apt repo) and Rust if not already present
+2. Download Ombra to `~/ombra` and build the setup wizard
+3. Launch an interactive terminal UI where you:
+   - Choose your AI model (Efficiency profile auto-detected and recommended)
+   - Set the response language
+   - Optionally configure remote access via DuckDNS
+4. Generate TLS certificates with your LAN IP in the SAN
+5. Start Qdrant, download Gemma-2-2B Q8_0 (~2.8 GB), and build the server in the background
+6. Ask onboarding questions while everything runs
+7. Install and enable the `ombra` systemd service so it starts automatically on boot
+
+> **Build time:** 30–60 min on N100. llama-cpp-2 compiles the full llama.cpp C++ library from source — the N100's 4 low-power cores make this the bottleneck.
 
 ## 4. Start the server
 
@@ -61,27 +63,27 @@ sudo systemctl status ombra
 Health check:
 
 ```bash
-curl --cacert certs/ca.crt \
-     --cert certs/client.crt --key certs/client.key \
+curl --cacert ~/ombra/certs/ca.crt \
+     --cert ~/ombra/certs/client.crt --key ~/ombra/certs/client.key \
      https://ombra.local:8080/health
 ```
 
 ## 5. Connect the mobile app
 
-Scan the QR code shown at the end of setup with the Ombra app. To show it again:
+Run the QR code script to display the connection QR code:
 
 ```bash
-bash show-qr.sh
+bash ~/ombra/show-qr.sh
 ```
 
-The app connects to `ombra.local:8080` locally. With DuckDNS configured, `<subdomain>.duckdns.org:8080` works from anywhere.
+Scan with the Ombra app. The app connects to `ombra.local:8080` locally. With DuckDNS configured, `<subdomain>.duckdns.org:8080` works from anywhere.
 
 ## Notes
 
-- **Build time:** 30–60 min on N100. llama-cpp-2 compiles the full llama.cpp C++ library from source — the N100's 4 low-power cores make this the bottleneck.
 - **Model size:** Gemma-2-2B Q8_0 is ~2.8 GB on disk and in RAM. Leaves plenty of headroom on 8 GB.
 - **N100 vs N305:** The N305 has slightly higher base clock and power limit. Both work identically — the same Efficiency profile is selected.
 - **Inference speed:** Expect 10–20 tokens/sec on the 2B model. Fast enough for query responses in under a few seconds.
 - **Power:** N100 idles at 4–6W. One of the most power-efficient options for an always-on server — cheaper to run than a light bulb.
 - **eMMC vs SSD:** Many N100 mini PCs ship with eMMC storage. Builds and model loading are noticeably faster on an NVMe SSD. Worth the upgrade for a permanent setup.
 - **16 GB RAM:** If your N100 device has 16 GB, the hardware detector still selects Efficiency (threshold is 28 GB for Performance). You can manually select Performance in setup if you want to run the 9B model, but inference will be slower than on the 8700G.
+- **Re-running setup:** Running `curl -sSf https://get.ombra.io | bash` again will pull the latest code and re-run the wizard. Existing config and certs are not overwritten.

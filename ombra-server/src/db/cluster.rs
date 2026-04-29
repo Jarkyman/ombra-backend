@@ -27,6 +27,7 @@ pub struct InsertClusterParams<'a> {
     pub language: &'a str,
 }
 
+#[cfg(test)]
 pub async fn insert_cluster(
     pool: &DatabasePool,
     params: InsertClusterParams<'_>,
@@ -94,34 +95,69 @@ pub async fn get_clusters_by_ids(
     pool: &DatabasePool,
     ids: &[String],
 ) -> Result<Vec<Cluster>, OmbraError> {
-    let mut clusters = Vec::with_capacity(ids.len());
-    for id in ids {
-        if let Some(cluster) = sqlx::query_as::<_, Cluster>("SELECT * FROM clusters WHERE id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| OmbraError::Storage(format!("get cluster by id: {e}")))?
-        {
-            clusters.push(cluster);
-        }
+    if ids.is_empty() {
+        return Ok(Vec::new());
     }
-    Ok(clusters)
+    let mut qb = sqlx::QueryBuilder::new("SELECT * FROM clusters WHERE id IN (");
+    let mut sep = qb.separated(", ");
+    for id in ids {
+        sep.push_bind(id);
+    }
+    sep.push_unseparated(")");
+    qb.build_query_as::<Cluster>()
+        .fetch_all(pool)
+        .await
+        .map_err(|e| OmbraError::Storage(format!("get clusters by ids: {e}")))
 }
 
-pub async fn assign_transcripts_to_cluster(
+pub async fn insert_cluster_with_transcripts(
     pool: &DatabasePool,
+    params: InsertClusterParams<'_>,
     transcript_ids: &[String],
-    cluster_id: &str,
-) -> Result<(), OmbraError> {
-    for transcript_id in transcript_ids {
-        sqlx::query("UPDATE transcripts SET cluster_id = ? WHERE id = ?")
-            .bind(cluster_id)
-            .bind(transcript_id)
-            .execute(pool)
+) -> Result<Cluster, OmbraError> {
+    let id = Uuid::new_v4().to_string();
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| OmbraError::Storage(format!("begin cluster transaction: {e}")))?;
+
+    let cluster = sqlx::query_as::<_, Cluster>(
+        "INSERT INTO clusters (id, session_id, started_at, closed_at, event_type, relevance_score, event_summary, language)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         RETURNING *",
+    )
+    .bind(&id)
+    .bind(params.session_id)
+    .bind(params.started_at)
+    .bind(params.closed_at)
+    .bind(params.event_type)
+    .bind(params.relevance_score)
+    .bind(params.event_summary)
+    .bind(params.language)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| OmbraError::Storage(format!("insert cluster: {e}")))?;
+
+    if !transcript_ids.is_empty() {
+        let mut qb = sqlx::QueryBuilder::new("UPDATE transcripts SET cluster_id = ");
+        qb.push_bind(&id);
+        qb.push(" WHERE id IN (");
+        let mut sep = qb.separated(", ");
+        for tid in transcript_ids {
+            sep.push_bind(tid);
+        }
+        sep.push_unseparated(")");
+        qb.build()
+            .execute(&mut *tx)
             .await
-            .map_err(|e| OmbraError::Storage(format!("assign transcript to cluster: {e}")))?;
+            .map_err(|e| OmbraError::Storage(format!("assign transcripts to cluster: {e}")))?;
     }
-    Ok(())
+
+    tx.commit()
+        .await
+        .map_err(|e| OmbraError::Storage(format!("commit cluster transaction: {e}")))?;
+
+    Ok(cluster)
 }
 
 #[cfg(test)]

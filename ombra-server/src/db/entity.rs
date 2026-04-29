@@ -10,8 +10,6 @@ pub struct Entity {
     pub id: String,
     pub name: String,
     pub entity_type: String,
-    pub first_seen: i64,
-    pub last_seen: i64,
     pub encounter_count: i64,
     pub profile_summary: Option<String>,
 }
@@ -100,18 +98,19 @@ pub async fn get_entities_by_ids(
     pool: &DatabasePool,
     ids: &[String],
 ) -> Result<Vec<Entity>, OmbraError> {
-    let mut entities = Vec::with_capacity(ids.len());
-    for id in ids {
-        if let Some(entity) = sqlx::query_as::<_, Entity>("SELECT * FROM entities WHERE id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| OmbraError::Storage(format!("get entity by id: {e}")))?
-        {
-            entities.push(entity);
-        }
+    if ids.is_empty() {
+        return Ok(Vec::new());
     }
-    Ok(entities)
+    let mut qb = sqlx::QueryBuilder::new("SELECT * FROM entities WHERE id IN (");
+    let mut sep = qb.separated(", ");
+    for id in ids {
+        sep.push_bind(id);
+    }
+    sep.push_unseparated(")");
+    qb.build_query_as::<Entity>()
+        .fetch_all(pool)
+        .await
+        .map_err(|e| OmbraError::Storage(format!("get entities by ids: {e}")))
 }
 
 pub async fn get_cluster_summaries_for_entity(
@@ -143,7 +142,12 @@ mod tests {
         assert_eq!(entity.name, "Lars");
         assert_eq!(entity.entity_type, "person");
         assert_eq!(entity.encounter_count, 1);
-        assert_eq!(entity.first_seen, 1000);
+
+        let first_seen: i64 = sqlx::query_scalar("SELECT first_seen FROM entities WHERE name = 'Lars'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(first_seen, 1000);
     }
 
     #[tokio::test]
@@ -153,8 +157,15 @@ mod tests {
         let entity = upsert_entity(&pool, "Lars", "person", 2000).await.unwrap();
 
         assert_eq!(entity.encounter_count, 2);
-        assert_eq!(entity.first_seen, 1000);
-        assert_eq!(entity.last_seen, 2000);
+
+        let (first_seen, last_seen): (i64, i64) = sqlx::query_as(
+            "SELECT first_seen, last_seen FROM entities WHERE name = 'Lars'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(first_seen, 1000);
+        assert_eq!(last_seen, 2000);
     }
 
     #[tokio::test]

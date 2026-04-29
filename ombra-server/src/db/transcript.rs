@@ -11,10 +11,8 @@ pub struct Transcript {
     pub id: String,
     pub session_id: String,
     pub content: String,
-    pub raw_whisper_text: String,
     pub detected_language: String,
     pub recorded_at: i64,
-    pub created_at: i64,
 }
 
 pub async fn insert_transcript(
@@ -80,6 +78,24 @@ pub async fn get_transcripts_by_ids(
             Ok(Transcript { content, ..row })
         })
         .collect()
+}
+
+#[derive(Debug, FromRow)]
+pub struct TranscriptStub {
+    pub id: String,
+    pub session_id: String,
+    pub recorded_at: i64,
+}
+
+pub async fn get_unassigned_transcript_stubs(
+    pool: &DatabasePool,
+) -> Result<Vec<TranscriptStub>, OmbraError> {
+    sqlx::query_as::<_, TranscriptStub>(
+        "SELECT id, session_id, recorded_at FROM transcripts WHERE cluster_id IS NULL ORDER BY recorded_at ASC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| OmbraError::Storage(format!("get unassigned transcripts: {e}")))
 }
 
 pub async fn list_transcripts_by_session(

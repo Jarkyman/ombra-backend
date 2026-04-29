@@ -306,6 +306,10 @@ write_config() {
     local encryption_key
     encryption_key="$(openssl rand -hex 32)"
 
+    local old_umask
+    old_umask="$(umask)"
+    umask 077
+
     {
         printf 'server_port = 8080\n'
         printf 'database_path = "ombra.db"\n'
@@ -326,7 +330,7 @@ write_config() {
             "$DDNS_TOKEN" "$DDNS_SUBDOMAIN" >> "$CONFIG_FILE"
     fi
 
-    chmod 600 "$CONFIG_FILE"
+    umask "$old_umask"
     info "Config written."
 }
 
@@ -572,6 +576,10 @@ save_profile() {
     local timestamp
     timestamp="$(date +%s)"
 
+    local old_umask
+    old_umask="$(umask)"
+    umask 077
+
     {
         printf '# Ombra user profile — collected at setup\n'
         printf '# Edit freely. The server reads this on first boot.\n\n'
@@ -584,6 +592,8 @@ save_profile() {
         printf 'additional = "%s"\n'       "$PROFILE_ADDITIONAL"
         printf 'created_at = %s\n'         "$timestamp"
     } > "$PROFILE_FILE"
+
+    umask "$old_umask"
 }
 
 # ── Wait for completion ───────────────────────────────────────────────────────

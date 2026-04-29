@@ -1,4 +1,5 @@
 mod commands;
+mod install;
 mod tui;
 
 use clap::Parser;
@@ -22,5 +23,6 @@ async fn main() {
     match args.command {
         OmbraCommand::Dashboard => tui::launch().await,
         OmbraCommand::Status => commands::print_status().await,
+        OmbraCommand::Install => install::run(),
     }
 }
