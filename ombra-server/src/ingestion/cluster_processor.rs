@@ -241,7 +241,7 @@ impl ClusterProcessor {
 
     async fn score_cluster(&self, transcript_texts: &[&str]) -> Result<ClusterScoreResponse, OmbraError> {
         let prompt = build_scoring_prompt(transcript_texts);
-        let response = self.inference_engine.complete(&prompt).await?;
+        let response = self.inference_engine.complete_structured(&prompt, 256).await?;
 
         let json_start = response.find('{').unwrap_or(0);
         let json_end = response.rfind('}').map(|i| i + 1).unwrap_or(response.len());
@@ -259,7 +259,7 @@ impl ClusterProcessor {
         transcript_texts: &[&str],
     ) -> Result<Vec<ExtractedEntity>, OmbraError> {
         let prompt = build_entity_extraction_prompt(transcript_texts);
-        let response = self.inference_engine.complete(&prompt).await?;
+        let response = self.inference_engine.complete_structured(&prompt, 256).await?;
 
         let json_start = response.find('[').unwrap_or(0);
         let json_end = response.rfind(']').map(|i| i + 1).unwrap_or(response.len());

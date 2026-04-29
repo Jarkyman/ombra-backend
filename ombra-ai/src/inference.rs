@@ -5,6 +5,11 @@ use std::path::PathBuf;
 #[async_trait]
 pub trait InferenceEngine: Send + Sync {
     async fn complete(&self, prompt: &str) -> Result<String, OmbraError>;
+
+    async fn complete_structured(&self, prompt: &str, max_tokens: u32) -> Result<String, OmbraError> {
+        let _ = max_tokens;
+        self.complete(prompt).await
+    }
 }
 
 pub struct InferenceEngineConfig {

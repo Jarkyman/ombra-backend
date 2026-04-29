@@ -23,7 +23,7 @@
 ## ombra-ai
 
 - [x] Implement `InferenceEngine` trait with `llama-cpp-2` bindings (greedy decoding)
-- [ ] (S) [AI]: Replace greedy decoding with temperature + top-p sampler via `LlamaSampler` chain
+- [x] (S) [AI]: Sampler chain — `penalties(1.1) → temp → top_p(0.9) → dist`. Two modes: `complete` (temp 0.35, natural language) and `complete_structured` (temp 0.1, JSON tasks). Thread count now correctly passed to `LlamaContextParams` via `with_n_threads` — was defaulting to 4 regardless of hardware.
 - [x] Add hardware-aware model loader — detects arch + RAM and selects correct GGUF quantization
 - [x] Implement `EmbeddingEngine` trait with `fastembed` (nomic-embed-text-v1.5)
 - [x] Complete `VectorStore` — connect to Qdrant, upsert embeddings, semantic search

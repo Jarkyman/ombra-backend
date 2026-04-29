@@ -20,6 +20,7 @@ pub struct LlamaCppInferenceEngine {
     backend: Arc<LlamaBackend>,
     context_size: u32,
     max_tokens: i32,
+    thread_count: i32,
     chat_template: Option<String>,
 }
 
@@ -38,6 +39,7 @@ impl LlamaCppInferenceEngine {
             backend: Arc::new(backend),
             context_size: config.context_size,
             max_tokens: config.max_tokens as i32,
+            thread_count: config.thread_count as i32,
             chat_template: config.chat_template.clone(),
         })
     }
@@ -58,17 +60,34 @@ impl InferenceEngine for LlamaCppInferenceEngine {
         let prompt = self.apply_template(prompt);
         let context_size = self.context_size;
         let max_tokens = self.max_tokens;
+        let thread_count = self.thread_count;
 
-        task::spawn_blocking(move || run_inference(&model, &backend, &prompt, context_size, max_tokens))
-            .await
-            .map_err(|e| OmbraError::Inference(format!("thread join: {e}")))?
+        task::spawn_blocking(move || {
+            run_inference(&model, &backend, &prompt, context_size, max_tokens, thread_count, 0.35)
+        })
+        .await
+        .map_err(|e| OmbraError::Inference(format!("thread join: {e}")))?
+    }
+
+    async fn complete_structured(&self, prompt: &str, max_tokens: u32) -> Result<String, OmbraError> {
+        let model = Arc::clone(&self.model);
+        let backend = Arc::clone(&self.backend);
+        let prompt = self.apply_template(prompt);
+        let context_size = self.context_size;
+        let thread_count = self.thread_count;
+
+        task::spawn_blocking(move || {
+            run_inference(&model, &backend, &prompt, context_size, max_tokens as i32, thread_count, 0.1)
+        })
+        .await
+        .map_err(|e| OmbraError::Inference(format!("thread join: {e}")))?
     }
 }
 
-fn build_sampler() -> LlamaSampler {
+fn build_sampler(temperature: f32) -> LlamaSampler {
     LlamaSampler::chain_simple([
-        LlamaSampler::penalties(-1, 1.3, 0.0, 0.0),
-        LlamaSampler::temp(0.2),
+        LlamaSampler::penalties(-1, 1.1, 0.0, 0.0),
+        LlamaSampler::temp(temperature),
         LlamaSampler::top_p(0.9, 1),
         LlamaSampler::dist(0),
     ])
@@ -80,9 +99,13 @@ fn run_inference(
     prompt: &str,
     context_size: u32,
     max_tokens: i32,
+    thread_count: i32,
+    temperature: f32,
 ) -> Result<String, OmbraError> {
     let ctx_params = LlamaContextParams::default()
-        .with_n_ctx(std::num::NonZeroU32::new(context_size));
+        .with_n_ctx(std::num::NonZeroU32::new(context_size))
+        .with_n_threads(thread_count)
+        .with_n_threads_batch(thread_count);
     let mut ctx = model
         .new_context(backend, ctx_params)
         .map_err(|e| OmbraError::Inference(format!("context creation: {e}")))?;
@@ -104,7 +127,7 @@ fn run_inference(
     ctx.decode(&mut batch)
         .map_err(|e| OmbraError::Inference(format!("initial decode: {e}")))?;
 
-    let mut sampler = build_sampler();
+    let mut sampler = build_sampler(temperature);
     sampler.accept_many(prompt_tokens.iter().copied());
 
     let mut output = String::new();
