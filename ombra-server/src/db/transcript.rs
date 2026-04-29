@@ -133,7 +133,7 @@ mod tests {
     async fn insert_and_read_back_decrypts_correctly() {
         let pool = create_test_db().await;
         let key = test_key();
-        let original = "Vi mødes igen på fredag klokken 14";
+        let original = "We will meet again on Friday at 14:00";
 
         let inserted = insert_transcript(&pool, "session-1", original, 1000, &key).await.unwrap();
         assert_eq!(inserted.content, original);

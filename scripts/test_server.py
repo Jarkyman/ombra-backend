@@ -122,17 +122,17 @@ SESSION_ID = f"test-session-{int(time.time())}"
 TRANSCRIPTS = [
     {
         "session_id": SESSION_ID,
-        "text": "Møde med Lars i dag. Han sagde at projektet er forsinket med to uger.",
+        "text": "Meeting with Lars today. He said the project is delayed by two weeks.",
         "recorded_at": int(time.time() * 1000),
     },
     {
         "session_id": SESSION_ID,
-        "text": "Lars nævnte at de mangler en backend-udvikler og spurgte om jeg kendte nogen.",
+        "text": "Lars mentioned they need a backend developer and asked if I knew anyone.",
         "recorded_at": int(time.time() * 1000) + 5000,
     },
     {
         "session_id": SESSION_ID,
-        "text": "Vi aftalte at følge op på fredag med en ny timeline.",
+        "text": "We agreed to follow up on Friday with a new timeline.",
         "recorded_at": int(time.time() * 1000) + 10000,
     },
     {
@@ -213,7 +213,7 @@ def test_query(has_clusters: bool):
         return
 
     print("  Sending query (model inference may take 10–60s)...")
-    status, body = http_post("/query", {"text": "Hvad talte jeg med Lars om?"})
+    status, body = http_post("/query", {"text": "What did I discuss with Lars?"})
 
     if status != 200:
         fail("POST /query", f"got {status}")

@@ -98,7 +98,7 @@ Context (work / family / friends / project) is inferred from when and where enco
 ### Query Enrichment
 
 - [x] When answering a query, retrieve both relevant event summaries AND relevant entity profiles as context
-- [x] Entity profiles make answers richer: "hvad talte jeg med Lars om sidst?" pulls Lars's profile + recent clusters mentioning Lars
+- [x] Entity profiles make answers richer: "what did I talk to Lars about last time?" pulls Lars's profile + recent clusters mentioning Lars
 
 ## Idle-Time Work (retrospective only — current data is already fully processed at ingestion)
 
@@ -158,6 +158,20 @@ as the AI learns more — but it needs a foundation to start from.
 - [ ] (W) [Infrastructure]: Ombra Relay (future, required for 100% of users) — a minimal relay server hosted under `ombra.io` that handles connection routing only, not data. Data flows directly between app and user's box once the connection is established — the relay only brokers the handshake. One small server can handle thousands of users. Necessary for users behind CGNAT (mobile internet, some cable providers) where UPnP and port forwarding are physically impossible. This is a deliberate infrastructure investment to make when the product goes to market.
 - [ ] (S) [BACKEND, Security]: Trusted Devices — track which client certificates have connected (by cert CN, stored in SQLite). Expose an API to list and revoke devices. App and CLI can show the list and let the user kick a device off. Currently mTLS ensures only cert-holders can connect, but there is no management UI.
 - [ ] (C) [BACKEND, UI]: In-app QR code generation — authenticated endpoint on the mTLS server (`POST /provision/rotate`) that writes a new token to `provision_token` and returns the full QR payload (`host`, `port`, `provision_port`, `token`, `ca_fp`). The app renders the QR inline so the user can scan it from a second device without touching the server terminal. Flow: app → POST /provision/rotate (mTLS) → server updates token file → returns payload → app renders QR → second device scans → fetches certs from provision server.
+
+### Certificate Auto-Renewal
+
+Design decision: once a device is connected, it should stay connected forever without manual intervention.
+Client certs are valid for 1 year. The server detects approaching expiry and proactively issues a new cert
+while the old one is still valid — the app rotates silently. The user never thinks about certificates.
+
+- [ ] (M) [BACKEND, Security]: Certificate expiry monitor — on server startup and once daily, read expiry dates from all client cert files on disk. Store in SQLite (`cert_expiry` table: device CN, expiry timestamp, last_renewed). Log a warning when any cert is within 60 days of expiry.
+- [ ] (M) [BACKEND, Security]: Auto-renewal endpoint `GET /provision/renew-cert` — authenticated via mTLS (so only a currently valid cert can trigger its own renewal). Server generates a new client cert signed by the CA, valid for another year, and returns it as a JSON payload (`{ cert_pem, key_pem, ca_pem }`). Old cert stays valid until it expires — no hard cutover.
+- [ ] (M) [MOBILE, Security]: App checks cert expiry on launch and after each successful connection. If the active cert expires within 30 days, silently calls `GET /provision/renew-cert`, replaces the stored cert+key on device, and continues without interrupting the user.
+- [ ] (S) [BACKEND, Security]: Server cert expiry monitor — if using a self-signed server cert, track its expiry the same way. If using Let's Encrypt, verify that the certbot renewal timer is active and log its next-run timestamp.
+- [ ] (S) [CLI, Security]: `ombra renew-certs` command — manually triggers re-generation of all client certs and prints instructions for re-provisioning any device that cannot auto-renew (e.g., hardware device). Useful as a fallback if auto-renewal somehow fails.
+- [ ] (S) [BACKEND, Security]: Renewed cert is written to disk atomically — generate to a temp file, then `rename()` into place. Avoids a window where the cert file is incomplete if the server crashes mid-write.
+- [ ] (S) [BACKEND, Security]: Grace period overlap — when a renewed cert is issued, the server accepts both the old and the new cert until the old one expires. Prevents a race where the app has the new cert but the server hasn't persisted it yet.
 
 ## Testing
 
@@ -241,6 +255,155 @@ Issues and improvements found during real-hardware and VM testing.
 
 - [x] (M) [Formatting, BACKEND]: Fix `dead_code` warnings in `entity.rs` (first_seen, last_seen), `transcript.rs` (session_id, raw_whisper_text, detected_language, recorded_at, created_at), and `user_profile.rs` (id, created_at) — either use the fields or remove them. Run `cargo clippy -- -D warnings` with zero warnings before shipping.
 
+## Admin Panel (Web UI)
+
+Web UI served by `ombra-server`, accessible at `ombra.local/admin` or `<LAN-IP>/admin`. Local network only — never exposed through the DDNS/public endpoint. Matches the Ombra app design language: warm palette, luxury minimalism, dark mode default. Same color tokens, typography, and component style as the app (see `docs/design/app-design-v2.md`).
+
+**Tech stack:** Vanilla HTML/CSS/JS served as static files from `ombra-server/admin/`. No build step — files committed directly to the repo. Axum `ServeDir` on the `/admin` route. CSS custom properties for all design tokens.
+
+### Foundation
+
+- [ ] (S) [BACKEND, UI]: Serve static files from `ombra-server/admin/` — Axum `ServeDir` on the `/admin` route. Files committed to repo, no build step.
+- [ ] (S) [BACKEND, Security]: Admin routes protected by mTLS (same as all other routes) — no additional auth needed.
+- [ ] (S) [BACKEND, Security]: Admin routes only accessible from loopback/LAN interfaces — middleware rejects requests from public IP ranges.
+- [ ] (S) [UI]: CSS design tokens file — all colors from app-design-v2.md as CSS custom properties, dark mode default with `prefers-color-scheme` support and manual toggle.
+- [ ] (S) [UI]: Base layout — left sidebar nav (collapsible), main content area, top header bar. Ombra enso logo at the top of the sidebar.
+- [ ] (S) [UI]: Navigation sidebar items — Dashboard, Logs, Memory, Entities, Hardware, Analytics, (divider), Config, Devices, Profile, Trash, Plugins.
+- [ ] (S) [UI]: Page header pattern — Cormorant Garamond italic 26sp title, DM Sans 14sp subtitle, action buttons on the right.
+- [ ] (S) [UI]: Toast notifications — slide in from bottom-right, auto-dismiss 3s. Used for: config saved, device revoked, cluster deleted.
+- [ ] (S) [UI]: Consistent card components — border-radius 18dp, surface background, Level 1 shadow, 1px border. Same as Memory Cluster Card in the app.
+- [ ] (S) [UI, BACKEND]: Sidebar update badge — shows current server version in JetBrains Mono at the bottom. Pulsing warning-color badge labeled "Update" when a newer release is available on GitHub. Collapses to a pulsing dot when sidebar is collapsed. Clicking triggers `ombra upgrade`.
+
+### Dashboard
+
+At-a-glance system status — like a router admin homepage but for your second brain.
+
+- [ ] (S) [UI, BACKEND]: `GET /admin/health` — server uptime, loaded model name, Qdrant status, SQLite DB size, systemd service state.
+- [ ] (S) [UI]: Connect app QR panel — top-left card showing a QR code for provisioning new devices. "Regenerate" button calls `POST /provision/rotate` to issue a fresh token and update the QR payload. Same QR provisioning flow as described in the Infrastructure section.
+- [ ] (S) [UI, BACKEND]: 2×2 stat grid — Uptime, Clusters today, Model name + quantization, Active connections. Each as a StatCard with JetBrains Mono value and DM Sans sub-label.
+- [ ] (S) [UI, BACKEND]: Last activity feed — 5 most recent clusters with event_type pill, Cormorant Garamond italic summary, relevance score, and timestamp (JetBrains Mono).
+- [ ] (S) [UI, BACKEND]: System snapshot panel — total clusters, total entities, DB size, Qdrant status, avg relevance, entities with profile. KV-row list style.
+
+### Logs
+
+Live JSONL log stream from the server, filterable and pausable.
+
+- [ ] (M) [BACKEND]: SSE endpoint `GET /admin/logs/stream` — streams JSONL log entries as Server-Sent Events.
+- [ ] (M) [UI]: Auto-scrolling log panel — JSONL feed with color-coded syntax (JetBrains Mono 12sp). `component` field highlighted in accent, `entropy_level` colored by severity.
+- [ ] (S) [UI]: Log level filter chips — All / Error / Warn / Info / Debug. Active chip: accent underline, inactive: textMuted.
+- [ ] (S) [UI]: Component filter — filter by `component` field (ingestion, ai, websocket, etc.).
+- [ ] (S) [UI]: Pause/resume button — stops auto-scroll, shows "paused, X new entries" badge.
+- [ ] (S) [UI]: Clear button — clears the visible log buffer (does not affect logs on disk).
+
+### Memory Browser
+
+Browse and manage all clusters in the system.
+
+- [ ] (S) [BACKEND]: `GET /admin/clusters` — paginated list with filters: session, date range, event_type, relevance_score range, language.
+- [ ] (S) [UI]: Cluster list — Memory Cluster Card style from the app: event_type pill, JetBrains Mono timestamp, Cormorant Garamond italic summary excerpt, relevance badge (success/warning/muted).
+- [ ] (S) [UI]: Filter sidebar — event_type multi-select, relevance range slider, date picker, language dropdown.
+- [ ] (S) [UI]: Cluster detail drawer — slides in from the right: full summary, raw transcripts, entities mentioned, embedding metadata.
+- [ ] (S) [UI, BACKEND]: Flag for deletion action on cluster — writes to `trash_candidates` with a note, surfaces in the Trash section.
+- [ ] (S) [UI]: Pagination — "load more" at the bottom, shows total count.
+
+### Entity Graph
+
+Visualization of the relationship network built up over time.
+
+- [ ] (M) [BACKEND]: `GET /admin/entities/graph` — returns nodes (entities) and edges (relationships) as JSON for graph rendering.
+- [ ] (M) [UI]: Force-directed graph — Canvas 2D, nodes colored by entity_type, edge thickness = relationship_strength. Similar rendering approach to the neural field animation in the app. Accent `#8B7CF6` for hover/active state.
+- [ ] (S) [UI]: Entity detail panel — click a node to show: name, type, encounter_count, context_tags, profile summary (if generated), recent clusters mentioning it.
+- [ ] (S) [UI]: Entity table view — sortable by encounter_count, last_seen, entity_type. Toggle between graph and table.
+- [ ] (S) [UI, BACKEND]: `GET /admin/entities` — paginated entity list for the table view.
+- [ ] (S) [UI]: Search field — filter entities by name (live substring search in the frontend).
+
+### Configuration
+
+Edit server configuration directly from the admin panel.
+
+- [ ] (S) [BACKEND]: `GET /admin/config` — returns current `AppConfig` as JSON (encryption key omitted).
+- [ ] (S) [BACKEND]: `PATCH /admin/config` — update allowed fields: response_language, cluster_timeout, entity profile threshold, DDNS settings.
+- [ ] (S) [UI]: Settings form — response language selector (ISO 639-1), cluster timeout slider with JetBrains Mono value display, entity profile threshold input.
+- [ ] (S) [UI]: DDNS status card — current hostname, last updated timestamp, enable/disable toggle.
+- [ ] (S) [UI]: mTLS certificate status — expiry dates for CA cert and server cert, days remaining. Warning color `#D4956A` under 30 days, success `#6BA98F` otherwise.
+- [ ] (S) [UI]: Save button sends PATCH, toast confirms success.
+- [ ] (S) [UI, BACKEND]: Danger zone — factory reset panel at the bottom of Config. Requires typing "RESET" into an input field to unlock the button. On confirm: deletes all clusters, entities, profiles, devices, and config from SQLite and Qdrant, restarts the server process into initial setup state. `POST /admin/reset` endpoint, protected by the same type-to-confirm check server-side.
+
+### Devices (Trusted Devices)
+
+View and manage which devices have access via mTLS.
+
+- [ ] (S) [BACKEND]: `GET /admin/devices` — list of registered client certs (CN, first_seen, last_seen, revoked status).
+- [ ] (S) [BACKEND]: `POST /admin/devices/:cn/revoke` — marks cert as revoked in SQLite, future connections from this cert are refused.
+- [ ] (S) [UI]: Device list — card per device: cert CN as name, last_seen (JetBrains Mono), connected/disconnected/revoked badge, revoke button.
+- [ ] (S) [UI]: Revoke confirmation modal — "This device will need to re-provision to connect again."
+
+### User Profile
+
+View and edit the user profile data injected as AI context on every query.
+
+- [ ] (S) [BACKEND]: `GET /admin/profile` — returns `user_profile` row and AI-generated profile summary.
+- [ ] (S) [BACKEND]: `PATCH /admin/profile` — update onboarding answers and trigger re-generation of the profile summary.
+- [ ] (S) [UI]: Profile view — Q&A pairs in list format, AI-generated summary in Cormorant Garamond italic, last_updated timestamp.
+- [ ] (S) [UI]: Edit mode — inline editing of answers, save button triggers re-generation via LLM, loading state during generation.
+
+### Trash Review
+
+Review clusters the AI has flagged for deletion due to low relevance.
+
+- [ ] (S) [BACKEND]: `GET /admin/trash` — list of `trash_candidates` with cluster info and AI-generated reason.
+- [ ] (S) [UI]: Trash list — cluster summary, AI deletion reason in textMuted italic, timestamp.
+- [ ] (S) [UI]: Confirm delete button — permanently deletes cluster, transcripts, and removes from Qdrant.
+- [ ] (S) [UI]: Restore button — moves cluster back to the clusters table, removes from trash_candidates.
+- [ ] (S) [UI]: Delete all button with confirmation modal — clears the entire trash_candidates table.
+
+### Hardware Monitor
+
+Real-time system telemetry for the server machine — like `htop` / `btop` but integrated into the admin panel with the Ombra design language.
+
+- [ ] (M) [BACKEND]: `GET /admin/hardware` — snapshot of CPU, RAM, disk, temperatures, network. Uses the `sysinfo` crate (pure Rust, cross-platform: Linux, macOS, Windows).
+- [ ] (S) [BACKEND]: SSE endpoint `GET /admin/hardware/stream` — pushes a hardware snapshot every 2s as Server-Sent Events for live UI updates.
+- [ ] (S) [UI]: CPU panel — overall CPU usage (%), per-core breakdown as mini progress bars, model name, logical core and thread count. JetBrains Mono for all values.
+- [ ] (S) [UI]: RAM panel — total, used, available, swap used/total. Horizontal progress bar in accent `#8B7CF6`, values in JetBrains Mono.
+- [ ] (S) [UI]: Disk panel — per mount point: device name, mount path, total/used/free, filesystem type. Makes it easy to see if GGUF models and SQLite are using expected space.
+- [ ] (S) [UI]: Temperature panel — CPU package temp (°C) and per-core temps where available from `sysinfo`. Color-coded: success `#6BA98F` below 70°C, warning `#D4956A` 70–85°C, recording `#E57373` above 85°C.
+- [ ] (S) [UI]: Network panel — bytes sent/received per interface since server start, interface names and IP addresses (LAN + DDNS hostname if configured).
+- [ ] (S) [UI]: Ombra process panel — RAM used by the `ombra-server` process specifically, process CPU %, process uptime.
+- [ ] (S) [UI]: Hardware profile badge — detected profile (Performance / Efficiency / Edge) and loaded GGUF model name. Same pill style as event_type in clusters.
+- [ ] (C) [UI]: History sparklines — mini line charts (Canvas 2D) for CPU % and RAM % over the last 10 minutes, updated live via SSE. Accent color on the line, subtle gradient fill underneath.
+
+### Analytics
+
+Insight into Ombra's activity and memory growth over time. Aggregates computed from SQLite — not real-time.
+
+- [ ] (S) [BACKEND]: `GET /admin/analytics/overview` — aggregate totals: transcripts, clusters, entities, Qdrant embeddings, DB size.
+- [ ] (S) [BACKEND]: `GET /admin/analytics/activity?range=30d` — daily activity: clusters per day, new entities per day, average relevance score per day. Range parameter: 7d / 30d / 90d / all.
+- [ ] (S) [BACKEND]: `GET /admin/analytics/entities` — encounter_count distribution, entities crossing profile threshold per week, most active entities (top 10).
+- [ ] (S) [BACKEND]: `GET /admin/analytics/languages` — distribution of transcript languages as percentages based on `detected_language`.
+- [ ] (S) [BACKEND]: `GET /admin/analytics/event-types` — distribution of cluster event_types as pie data.
+- [ ] (S) [UI]: Activity heatmap — GitHub-style calendar heatmap, last 52 weeks. Accent intensity = number of clusters that day. Canvas 2D.
+- [ ] (S) [UI]: Daily activity bar chart — clusters per day, last 30 days. Bars in accent `#8B7CF6`, JetBrains Mono labels on the x-axis.
+- [ ] (S) [UI]: Relevance score histogram — distribution across the 0.0–1.0 scale. Shows the ratio of relevant vs. ambient content.
+- [ ] (S) [UI]: Language distribution — horizontal bar chart, ISO code labels in JetBrains Mono.
+- [ ] (S) [UI]: Event type donut chart — accent shades per segment, event_type pill-style labels.
+- [ ] (S) [UI]: Entity growth curve — line chart: entity count over time, marker at first profile-threshold crossing.
+- [ ] (S) [UI]: Memory size over time — DB size (MB) and Qdrant embedding count as a dual-axis line chart. Shows the growth rate of the second brain.
+- [ ] (C) [UI]: Time range selector — toggle: 1d / 7d / 30d / 1 year / All. 1d = hourly buckets, 7d = 6h buckets, 30d = daily, 1 year = weekly, All = weekly from first cluster. Refreshes all charts and aggregates.
+
+### Plugins
+
+Extend Ombra with integrations. Official plugins are maintained by the Ombra team. Community plugins are third-party and run with the same server permissions — user installs at their own risk.
+
+- [ ] (M) [BACKEND]: Plugin host — plugins are self-contained binaries or scripts dropped into `~/.ombra/plugins/`. Server discovers them on startup, lists them in `GET /admin/plugins`. Each plugin declares its name, version, author, and description in a manifest file.
+- [ ] (S) [BACKEND]: `GET /admin/plugins` — returns list of all known plugins (installed + available from registry) with metadata.
+- [ ] (S) [BACKEND]: `POST /admin/plugins/:id/install` and `DELETE /admin/plugins/:id` — install/uninstall a plugin by ID. Install fetches from the official registry or a manifest URL.
+- [ ] (S) [UI]: Plugins page — two tabs: Official and Community. Each plugin shown as a card: icon (colored initial), name, version, author, description, install/uninstall toggle button.
+- [ ] (S) [UI]: Official tab — plugins maintained by the Ombra team, guaranteed compatible. Currently planned: Calendar (Google/Apple), Notion export, Obsidian vault writer, Slack capture.
+- [ ] (S) [UI]: Community tab — third-party plugins with star count. Warning banner: "Community plugins run on your server with full permissions — install only plugins you trust." Submit plugin link for contributors.
+- [ ] (W) [BACKEND, Infrastructure]: Plugin registry — hosted at `registry.ombra.io`, a simple JSON manifest listing available plugins with download URLs and checksums. Same trust model as Homebrew taps.
+
+---
+
 ## future
 
 - [ ] (W) [UI, AI]: Assistant mode (can do stuff for me)
@@ -249,4 +412,3 @@ Issues and improvements found during real-hardware and VM testing.
 - [ ] (W) [BACKEND]: How much access can I get to mobile data? (battery drain)
 - [ ] (W) [UI, AI]: 'Hey Ombra' Function, to ask questions (needs Notifications first)
 - [ ] (C) [AI, BACKEND]: Fuzzy entity matching — before creating a new entity, check if a close variant already exists ("Lars" vs "Lars Hansen"); use string similarity + LLM confirmation if ambiguous
-- [ ] (M) [UI, BACKEND]: Admin panel — web UI served by the backend, accessible at `ombra.local` or LAN IP (local network only). Shows: live logs, clusters, entity graph, system health, threshold config. Like a router admin page but for your second brain.

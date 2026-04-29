@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn roundtrip_preserves_content() {
         let key = test_key();
-        let original = "Vi mødes igen på fredag klokken 14";
+        let original = "We will meet again on Friday at 14:00";
         let encrypted = encrypt(original, &key).unwrap();
         let decrypted = decrypt(&encrypted, &key).unwrap();
         assert_eq!(decrypted, original);

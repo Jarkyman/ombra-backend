@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn accepts_real_content() {
-        assert!(!is_empty_transcript("Vi mødes igen på fredag"));
+        assert!(!is_empty_transcript("We will meet again on Friday"));
         assert!(!is_empty_transcript("hello"));
         assert!(!is_empty_transcript("a"));
     }
