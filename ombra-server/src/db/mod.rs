@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod cluster;
 pub mod entity;
 pub mod session;

@@ -65,7 +65,7 @@ function AdminApp() {
         mobile={isMobile}
       />
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <AdminHeader
           tok={tok}
           section={section}
@@ -73,7 +73,7 @@ function AdminApp() {
           onMenuOpen={() => setCollapsed(false)}
         />
         <div style={{
-          flex: 1, overflow: 'auto',
+          flex: 1, minWidth: 0, overflow: 'auto',
           padding: isMobile ? 12 : 20,
           background: tok.canvas,
         }}>

@@ -18,7 +18,7 @@ const SECTION_META = {
   memory:    { title: 'Memory',        sub: 'Browsable memory clusters'                   },
   entities:  { title: 'Entities',      sub: 'Force-directed entity relationship graph'    },
   hardware:  { title: 'Hardware',      sub: 'CPU · RAM · Temperature · Disk · Network'    },
-  analytics: { title: 'Analytics',     sub: 'Memory growth and activity over time'        },
+  analytics: { title: 'Analytics',     sub: 'All charts update with the selected time range'},
   config:    { title: 'Configuration', sub: 'Server settings and certificates'            },
   devices:   { title: 'Devices',       sub: 'Trusted mTLS client certificates'            },
   profile:   { title: 'User Profile',  sub: 'AI-generated context injected on every query'},

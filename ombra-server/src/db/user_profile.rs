@@ -1,3 +1,9 @@
+// TODO(future): replace fixed-column UserProfile with a dynamic `profile_facts` table:
+//   (id TEXT PK, key TEXT, value TEXT, source TEXT, created_at INTEGER)
+// This allows Ombra to write new facts from conversations automatically, and the admin
+// panel to surface arbitrary growing context rather than just the 6 onboarding fields.
+// Requires: migration, new GET/PATCH /profile endpoints, summary regeneration endpoint.
+
 use sqlx::FromRow;
 
 use ombra_common::error::OmbraError;

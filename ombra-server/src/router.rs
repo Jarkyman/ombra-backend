@@ -10,7 +10,7 @@ use tower_http::trace::TraceLayer;
 use tracing::Span;
 use uuid::Uuid;
 
-use crate::handlers::{clusters, entities, health, query, sessions, settings, websocket};
+use crate::handlers::{analytics, clusters, entities, health, query, sessions, settings, websocket};
 use crate::state::AppState;
 
 pub fn build(state: AppState) -> Router {
@@ -27,6 +27,11 @@ pub fn build(state: AppState) -> Router {
         .route("/entities/:id", get(entities::get))
         .route("/settings", get(settings::get))
         .route("/settings", patch(settings::update))
+        .route("/admin/analytics/overview", get(analytics::overview))
+        .route("/admin/analytics/activity", get(analytics::activity))
+        .route("/admin/analytics/entities", get(analytics::entities))
+        .route("/admin/analytics/languages", get(analytics::languages))
+        .route("/admin/analytics/event-types", get(analytics::event_types))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {

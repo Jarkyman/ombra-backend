@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod clusters;
 pub mod entities;
 pub mod health;
