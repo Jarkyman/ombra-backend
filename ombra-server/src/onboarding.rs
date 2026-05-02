@@ -6,7 +6,6 @@ use serde::Deserialize;
 use ombra_ai::inference::InferenceEngine;
 
 use crate::db::{self, DatabasePool};
-use crate::db::user_profile::InsertUserProfileParams;
 
 const PROFILE_FILE: &str = "user_profile.toml";
 
@@ -31,9 +30,7 @@ pub async fn run_if_needed(
     inference_engine: &Arc<dyn InferenceEngine>,
 ) -> Option<String> {
     match db::user_profile::get_profile(pool).await {
-        Ok(Some(profile)) => {
-            return profile.profile_summary;
-        }
+        Ok(Some(profile)) => return profile.profile_summary,
         Err(e) => {
             tracing::warn!(%e, "could not read user profile from DB");
             return None;
@@ -71,29 +68,32 @@ pub async fn run_if_needed(
             .as_secs() as i64
     });
 
-    let profile = match db::user_profile::insert_profile(
-        pool,
-        InsertUserProfileParams {
-            name: non_empty(fields.name.clone()),
-            occupation: non_empty(fields.occupation.clone()),
-            location: non_empty(fields.location.clone()),
-            important_people: non_empty(fields.important_people.clone()),
-            current_projects: non_empty(fields.current_projects.clone()),
-            additional: non_empty(fields.additional.clone()),
-            created_at,
-        },
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!(%e, "could not insert user profile");
-            return None;
-        }
-    };
+    if let Err(e) = db::user_profile::create_default_profile(pool, created_at).await {
+        tracing::warn!(%e, "could not create user profile row");
+        return None;
+    }
 
-    let prompt = build_profile_prompt(&profile.name, &profile.occupation, &profile.location,
-        &profile.important_people, &profile.current_projects, &profile.additional);
+    let facts = vec![
+        ("name".to_string(),             fields.name.clone().unwrap_or_default()),
+        ("occupation".to_string(),       fields.occupation.clone().unwrap_or_default()),
+        ("location".to_string(),         fields.location.clone().unwrap_or_default()),
+        ("important_people".to_string(), fields.important_people.clone().unwrap_or_default()),
+        ("current_projects".to_string(), fields.current_projects.clone().unwrap_or_default()),
+        ("additional".to_string(),       fields.additional.clone().unwrap_or_default()),
+    ];
+
+    if let Err(e) = db::profile_facts::upsert_facts(pool, &facts, "onboarding").await {
+        tracing::warn!(%e, "could not insert profile facts");
+    }
+
+    let prompt = build_profile_prompt(
+        &fields.name,
+        &fields.occupation,
+        &fields.location,
+        &fields.important_people,
+        &fields.current_projects,
+        &fields.additional,
+    );
 
     let summary = match inference_engine.complete(&prompt).await {
         Ok(s) => s.trim().to_string(),
@@ -109,10 +109,6 @@ pub async fn run_if_needed(
 
     tracing::info!("user profile loaded from user_profile.toml");
     Some(summary)
-}
-
-fn non_empty(s: Option<String>) -> Option<String> {
-    s.filter(|v| !v.trim().is_empty())
 }
 
 fn build_profile_prompt(

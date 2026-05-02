@@ -1,31 +1,4 @@
-const { useState } = React;
-
-const MOCK_TRASH = [
-  {
-    id: 'clus-a1b2',
-    event_type: 'small_talk',
-    event_summary: 'Brief exchange about weekend plans — no actionable content or memorable context.',
-    relevance_score: 0.08,
-    started_at: Date.now() / 1000 - 86400 * 2,
-    flagged_by: 'ai',
-  },
-  {
-    id: 'clus-c3d4',
-    event_type: 'media_consumption',
-    event_summary: 'Background TV audio captured during dinner — fragmented speech, no coherent topic detected.',
-    relevance_score: 0.04,
-    started_at: Date.now() / 1000 - 86400 * 5,
-    flagged_by: 'ai',
-  },
-  {
-    id: 'clus-e5f6',
-    event_type: 'conversation',
-    event_summary: 'Discussion about a movie watched last night — personal taste, no projects or people relevant to my context.',
-    relevance_score: 0.19,
-    started_at: Date.now() / 1000 - 86400 * 1,
-    flagged_by: 'user',
-  },
-];
+const { useState, useEffect } = React;
 
 function formatDate(unixSecs) {
   const d = new Date(unixSecs * 1000);
@@ -248,12 +221,37 @@ function ClusterCard({ tok, cluster, onRestore, onDelete }) {
 }
 
 function TrashContent({ tok }) {
-  const [items, setItems]       = useState(MOCK_TRASH);
+  const [items,     setItems]     = useState([]);
+  const [loading,   setLoading]   = useState(true);
   const [showModal, setShowModal] = useState(false);
 
-  const restore = (id) => setItems(prev => prev.filter(c => c.id !== id));
-  const remove  = (id) => setItems(prev => prev.filter(c => c.id !== id));
-  const emptyAll = ()  => setItems([]);
+  useEffect(() => {
+    fetch('/clusters/trash')
+      .then(r => r.json())
+      .then(data => { setItems(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const restore = (id) => {
+    fetch(`/clusters/${id}/restore`, { method: 'POST' })
+      .then(r => { if (r.ok) setItems(prev => prev.filter(c => c.id !== id)); });
+  };
+
+  const remove = (id) => {
+    fetch(`/clusters/${id}`, { method: 'DELETE' })
+      .then(r => { if (r.ok) setItems(prev => prev.filter(c => c.id !== id)); });
+  };
+
+  const emptyAll = () => {
+    fetch('/clusters/trash', { method: 'DELETE' })
+      .then(r => { if (r.ok) setItems([]); });
+  };
+
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontFamily: MONO, fontSize: 12, color: tok.textMuted }}>
+      loading trash…
+    </div>
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'slide-up 200ms ease' }}>

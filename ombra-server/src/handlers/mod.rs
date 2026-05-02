@@ -1,10 +1,16 @@
 pub mod analytics;
+pub mod devices;
+pub mod provision;
 pub mod clusters;
 pub mod entities;
+pub mod hardware;
 pub mod health;
+pub mod logs;
+pub mod profile;
 pub mod query;
 pub mod sessions;
 pub mod settings;
+pub mod trash;
 pub mod websocket;
 
 use axum::{Json, http::StatusCode, response::{IntoResponse, Response}};

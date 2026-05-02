@@ -1,241 +1,47 @@
-const { useState, useMemo, useEffect } = React;
-
-// ─── mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_MEMORIES = [
-  {
-    id: 'clus_8f2a',
-    text: 'Book club met at Sarah\'s tonight. Discussing The Three-Body Problem — everyone loved the Dark Forest theory. Sarah suggested Blindsight as the next read. Meetings are moving to Thursday evenings from now on, since Tuesdays clash with Jakob\'s football.',
-    created_at: Date.now() - 2 * 60 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 48,
-    vectors: 4,
-    entities: ['Sarah Kim', 'Jakob', 'The Three-Body Problem', 'Blindsight'],
-    flagged: false,
-    topic: 'social',
-  },
-  {
-    id: 'clus_7c3b',
-    text: 'Need to pick up: oat milk, sourdough, salmon fillets, arugula, good olive oil. Also the prescription from Matas — they close at 18:00 on Fridays so go before work.',
-    created_at: Date.now() - 48 * 60 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 34,
-    vectors: 2,
-    entities: ['Matas'],
-    flagged: false,
-    topic: 'errands',
-  },
-  {
-    id: 'clus_6e1c',
-    text: 'Project Lumen kickoff done. Splitting into three tracks: frontend (Jakob), backend (me), design system (Mia). Deadline is end of Q2. I need to update the roadmap doc this week and schedule weekly syncs on Mondays.',
-    created_at: Date.now() - 3 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 41,
-    vectors: 3,
-    entities: ['Jakob', 'Mia', 'Project Lumen'],
-    flagged: false,
-    topic: 'work',
-  },
-  {
-    id: 'clus_5d8a',
-    text: 'Called dad. He\'s visiting Copenhagen in mid-May, probably the 17th or 18th. Need to book a restaurant — he loves Italian. Maybe Brace or Era Ora. Check if Nanna can join too.',
-    created_at: Date.now() - 6 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 40,
-    vectors: 3,
-    entities: ['Dad', 'Nanna', 'Copenhagen', 'Brace', 'Era Ora'],
-    flagged: false,
-    topic: 'family',
-  },
-  {
-    id: 'clus_4b9d',
-    text: 'Flight CPH to LHR on 14 June. Terminal 2, gate opens at 06:30. Booking reference ABCXYZ. Remember European travel adapter and let Airbnb host know early check-in.',
-    created_at: Date.now() - 14 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 35,
-    vectors: 2,
-    entities: ['CPH', 'LHR'],
-    flagged: false,
-    topic: 'travel',
-  },
-  {
-    id: 'clus_3a2f',
-    text: 'Dentist appointment Tuesday 13:30 at Nørreport. Bring insurance card. Ask about the sensitivity in the lower left molar — been bothering me for about two weeks.',
-    created_at: Date.now() - 1.2 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 33,
-    vectors: 2,
-    entities: ['Nørreport'],
-    flagged: false,
-    topic: 'health',
-  },
-  {
-    id: 'clus_2f7e',
-    text: 'Meeting with the investors at 14:00. They want a demo of the memory playback feature specifically. Prepare a clean session recording and have the latency numbers ready — they will ask about inference speed.',
-    created_at: Date.now() - 1.8 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 40,
-    vectors: 3,
-    entities: ['Ombra'],
-    flagged: false,
-    topic: 'work',
-  },
-  {
-    id: 'clus_1c4b',
-    text: 'Podcast recommendation from Mia: "Acquired" — specifically the Nvidia episode. Also she mentioned a Substack called "Lenny\'s Newsletter" for product strategy content.',
-    created_at: Date.now() - 2.1 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 31,
-    vectors: 2,
-    entities: ['Mia', 'Acquired', 'Nvidia', "Lenny's Newsletter"],
-    flagged: false,
-    topic: 'learning',
-  },
-  {
-    id: 'clus_0e5c',
-    text: 'Landlord says the leak in the bathroom is from the upstairs neighbour — maintenance crew coming Thursday between 10 and 14. Work from a café that day. Maybe Prolog or Democratic.',
-    created_at: Date.now() - 2.6 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 37,
-    vectors: 2,
-    entities: ['Prolog', 'Democratic'],
-    flagged: true,
-    topic: 'home',
-  },
-  {
-    id: 'clus_9d3a',
-    text: 'Sleep has been terrible this week. Going to bed too late, phone in bed. Starting a rule: no screens after 22:00, phone on charger in the hallway. Try for two weeks.',
-    created_at: Date.now() - 3.2 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 38,
-    vectors: 2,
-    entities: [],
-    flagged: false,
-    topic: 'health',
-  },
-  {
-    id: 'clus_8c1e',
-    text: 'Sarah Kim mentioned her new role at Stripe — she starts in August. Celebration dinner planned for the last Friday of July. She asked if I could help with her resignation letter.',
-    created_at: Date.now() - 4 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 36,
-    vectors: 2,
-    entities: ['Sarah Kim', 'Stripe'],
-    flagged: false,
-    topic: 'social',
-  },
-  {
-    id: 'clus_7b2f',
-    text: 'Running pace is improving. Hit 5:12 per km on Thursday\'s long run — best since January. Target is sub-5:00 before the half marathon in September. Keep Thursday long runs and add one tempo session.',
-    created_at: Date.now() - 5 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 41,
-    vectors: 3,
-    entities: [],
-    flagged: false,
-    topic: 'fitness',
-  },
-  {
-    id: 'clus_6a4d',
-    text: 'Read about Retrieval-Augmented Generation improvements. The key insight: chunking strategy matters more than embedding model choice for dense retrieval. Sentence-level chunks with 20% overlap outperform fixed-size chunks.',
-    created_at: Date.now() - 6 * 24 * 3600 * 1000,
-    source: 'MacBook Pro',
-    words: 37,
-    vectors: 3,
-    entities: [],
-    flagged: false,
-    topic: 'learning',
-  },
-  {
-    id: 'clus_5e8b',
-    text: 'Mom\'s birthday is May 31st. Order flowers this week — she loves peonies and ranunculus. Check if dad already has plans or if we\'re doing something together.',
-    created_at: Date.now() - 7 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 33,
-    vectors: 2,
-    entities: ['Mom', 'Dad'],
-    flagged: false,
-    topic: 'family',
-  },
-  {
-    id: 'clus_4f1c',
-    text: 'The Q1 numbers are in. ARR grew 18% but churn ticked up to 4.2% — needs attention. Jakob thinks it\'s the onboarding flow. Mia wants to do user interviews next week.',
-    created_at: Date.now() - 8 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 38,
-    vectors: 3,
-    entities: ['Jakob', 'Mia'],
-    flagged: true,
-    topic: 'work',
-  },
-  {
-    id: 'clus_3g2a',
-    text: 'Tried the new coffee place on Gammel Kongevej — Darcy\'s. Filter coffee was excellent, oat flat white less so. Good spot to work in the mornings, quiet before 10.',
-    created_at: Date.now() - 9 * 24 * 3600 * 1000,
-    source: 'iPhone 15 Pro',
-    words: 34,
-    vectors: 2,
-    entities: ["Darcy's", 'Gammel Kongevej'],
-    flagged: false,
-    topic: 'food',
-  },
-];
-
-const TOPICS = [...new Set(MOCK_MEMORIES.map(m => m.topic))].sort();
+const { useState, useMemo, useEffect, useCallback } = React;
 
 const TOPIC_COLORS = {
-  work:     '#8B7CF6',
-  social:   '#6BA98F',
-  family:   '#D4956A',
-  health:   '#E57373',
-  learning: '#7CB9D4',
-  travel:   '#9B8EC4',
-  fitness:  '#82C4A0',
-  errands:  '#A09A94',
-  home:     '#C4AA82',
-  food:     '#D4A96A',
+  work:         '#8B7CF6',
+  social:       '#6BA98F',
+  family:       '#D4956A',
+  health:       '#E57373',
+  learning:     '#7CB9D4',
+  travel:       '#9B8EC4',
+  fitness:      '#82C4A0',
+  errands:      '#A09A94',
+  home:         '#C4AA82',
+  food:         '#D4A96A',
+  conversation: '#8B7CF6',
+  meeting:      '#D4956A',
+  task:         '#A09A94',
+  idea:         '#7CB9D4',
 };
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+function topicColor(eventType) {
+  return TOPIC_COLORS[eventType] ?? '#A09A94';
+}
 
-function relativeTime(ts) {
-  const diff = Date.now() - ts;
-  const m    = Math.floor(diff / 60000);
-  const h    = Math.floor(diff / 3600000);
-  const d    = Math.floor(diff / 86400000);
+function relativeTime(ms) {
+  const diff = Date.now() - ms;
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
   if (m < 60)  return `${m}m ago`;
   if (h < 24)  return `${h}h ago`;
   if (d === 1) return 'yesterday';
   return `${d}d ago`;
 }
 
-// ─── EntityChip ───────────────────────────────────────────────────────────────
+const PAGE_SIZE = 50;
 
-function EntityChip({ tok, label, color }) {
-  return (
-    <div style={{
-      fontFamily: MONO, fontSize: 9.5, letterSpacing: 0.3,
-      padding: '2px 8px', borderRadius: 100,
-      background: color ? `${color}18` : tok.accentSubtle,
-      color:      color ?? tok.accent,
-      border:     `1px solid ${color ? `${color}30` : tok.accentBorder}`,
-      whiteSpace: 'nowrap',
-    }}>
-      {label}
-    </div>
-  );
-}
-
-// ─── MemoryCard ───────────────────────────────────────────────────────────────
-
-function MemoryCard({ tok, mem, expanded, onToggle, onFlag }) {
-  const topicColor = TOPIC_COLORS[mem.topic] ?? tok.accent;
+function MemoryCard({ tok, mem, expanded, onToggle, onFlag, flagging }) {
+  const color = topicColor(mem.event_type);
 
   return (
     <div
       style={{
         background: tok.surface,
-        border: `1px solid ${expanded ? tok.accentBorder : (mem.flagged ? tok.warning + '60' : tok.border)}`,
+        border: `1px solid ${expanded ? tok.accentBorder : tok.border}`,
         borderRadius: 14,
         overflow: 'hidden',
         transition: 'border-color 150ms',
@@ -243,26 +49,18 @@ function MemoryCard({ tok, mem, expanded, onToggle, onFlag }) {
       }}
       onClick={onToggle}
     >
-      {/* ── card header ── */}
       <div style={{ padding: '14px 16px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          {/* topic dot */}
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: topicColor, flexShrink: 0 }} />
-          <div style={{ fontFamily: MONO, fontSize: 9.5, color: topicColor, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
-            {mem.topic}
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+          <div style={{ fontFamily: MONO, fontSize: 9.5, color, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
+            {mem.event_type}
           </div>
           <div style={{ flex: 1 }} />
-          {mem.flagged && (
-            <div style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: tok.warning, letterSpacing: 0.5, background: tok.warningSubtle, padding: '2px 7px', borderRadius: 5 }}>
-              FLAGGED
-            </div>
-          )}
           <div style={{ fontFamily: MONO, fontSize: 10, color: tok.textDisabled }}>
-            {relativeTime(mem.created_at)}
+            {relativeTime(mem.started_at * 1000)}
           </div>
         </div>
 
-        {/* text preview / full text */}
         <div style={{
           fontFamily: SANS, fontSize: 13.5, lineHeight: 1.65,
           color: tok.textSecondary,
@@ -272,20 +70,10 @@ function MemoryCard({ tok, mem, expanded, onToggle, onFlag }) {
           overflow: expanded ? 'visible' : 'hidden',
           marginBottom: 10,
         }}>
-          {mem.text}
+          {mem.event_summary}
         </div>
-
-        {/* entity chips */}
-        {mem.entities.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
-            {mem.entities.map(e => (
-              <EntityChip key={e} tok={tok} label={e} />
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* ── card footer ── */}
       <div
         style={{
           display: 'flex', alignItems: 'center', gap: 10,
@@ -295,84 +83,119 @@ function MemoryCard({ tok, mem, expanded, onToggle, onFlag }) {
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled }}>
-          {mem.words}w
+        <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled, letterSpacing: 0.3 }}>
+          {mem.language}
         </div>
         <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled }}>·</div>
         <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled }}>
-          {mem.vectors} vectors
+          {(mem.relevance_score * 100).toFixed(0)}% relevance
         </div>
-        <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled }}>·</div>
-        <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {mem.source}
-        </div>
-        <div style={{ fontFamily: MONO, fontSize: 9, color: tok.textDisabled, marginLeft: 'auto' }}>
+        <div style={{ fontFamily: MONO, fontSize: 9, color: tok.textDisabled, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
           {mem.id}
         </div>
 
-        {/* flag / unflag */}
         <div
-          onClick={() => onFlag(mem.id)}
-          title={mem.flagged ? 'Remove flag' : 'Flag for deletion'}
+          onClick={() => !flagging && onFlag(mem.id)}
+          title="Flag for deletion"
           style={{
-            cursor: 'pointer', padding: '2px 4px', borderRadius: 5,
-            color: mem.flagged ? tok.warning : tok.textDisabled,
+            cursor: flagging ? 'wait' : 'pointer',
+            padding: '2px 4px', borderRadius: 5,
+            color: tok.textDisabled,
+            opacity: flagging ? 0.5 : 1,
             transition: 'color 120ms',
           }}
         >
-          <Icon name="trash" size={13} color={mem.flagged ? tok.warning : tok.textDisabled} />
+          <Icon name="trash" size={13} color={tok.textDisabled} />
         </div>
       </div>
     </div>
   );
 }
 
-// ─── MemoryContent ────────────────────────────────────────────────────────────
-
 function MemoryContent({ tok }) {
-  const [memories,    setMemories]    = useState(MOCK_MEMORIES);
-  const [search,      setSearch]      = useState(() => localStorage.getItem('ombra_memory_search') || '');
-  const [topicFilter, setTopicFilter] = useState(() => localStorage.getItem('ombra_memory_topicFilter') || 'ALL');
-  const [showFlagged, setShowFlagged] = useState(() => localStorage.getItem('ombra_memory_showFlagged') === 'true');
-  const [sortOrder,   setSortOrder]   = useState(() => localStorage.getItem('ombra_memory_sortOrder') || 'newest');
-  const [expandedId,  setExpandedId]  = useState(null);
+  const [clusters,    setClusters]    = useState([]);
+  const [overview,    setOverview]    = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore,     setHasMore]     = useState(true);
+  const [flagging,    setFlagging]    = useState(new Set());
+
+  const [search,       setSearch]       = useState(() => localStorage.getItem('ombra_memory_search') || '');
+  const [topicFilter,  setTopicFilter]  = useState(() => localStorage.getItem('ombra_memory_topicFilter') || 'ALL');
+  const [sortOrder,    setSortOrder]    = useState(() => localStorage.getItem('ombra_memory_sortOrder') || 'newest');
+  const [expandedId,   setExpandedId]   = useState(null);
 
   const width    = useWindowWidth();
   const isMobile = width < 768;
 
+  useEffect(() => {
+    Promise.all([
+      fetch(`/clusters?limit=${PAGE_SIZE}&offset=0`).then(r => r.json()),
+      fetch('/admin/analytics/overview').then(r => r.json()),
+    ]).then(([data, ov]) => {
+      setClusters(data);
+      setOverview(ov);
+      setHasMore(data.length === PAGE_SIZE);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const loadMore = useCallback(() => {
+    setLoadingMore(true);
+    fetch(`/clusters?limit=${PAGE_SIZE}&offset=${clusters.length}`)
+      .then(r => r.json())
+      .then(data => {
+        setClusters(prev => [...prev, ...data]);
+        setHasMore(data.length === PAGE_SIZE);
+        setLoadingMore(false);
+      })
+      .catch(() => setLoadingMore(false));
+  }, [clusters.length]);
+
+  const handleFlag = useCallback((id) => {
+    setFlagging(prev => new Set(prev).add(id));
+    fetch(`/clusters/${id}/flag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flagged_by: 'admin' }),
+    }).then(r => {
+      if (r.ok) setClusters(prev => prev.filter(c => c.id !== id));
+    }).finally(() => {
+      setFlagging(prev => { const s = new Set(prev); s.delete(id); return s; });
+    });
+  }, []);
+
   useEffect(() => localStorage.setItem('ombra_memory_search', search), [search]);
   useEffect(() => localStorage.setItem('ombra_memory_topicFilter', topicFilter), [topicFilter]);
-  useEffect(() => localStorage.setItem('ombra_memory_showFlagged', showFlagged), [showFlagged]);
   useEffect(() => localStorage.setItem('ombra_memory_sortOrder', sortOrder), [sortOrder]);
 
-  const handleFlag = (id) => {
-    setMemories(prev => prev.map(m => m.id === id ? { ...m, flagged: !m.flagged } : m));
-  };
+  const topics = useMemo(() => [...new Set(clusters.map(c => c.event_type))].sort(), [clusters]);
 
   const filtered = useMemo(() => {
-    let list = memories;
-    if (showFlagged)        list = list.filter(m => m.flagged);
-    if (topicFilter !== 'ALL') list = list.filter(m => m.topic === topicFilter);
+    let list = clusters;
+    if (topicFilter !== 'ALL') list = list.filter(c => c.event_type === topicFilter);
     if (search) {
       const q = search.toLowerCase();
-      list = list.filter(m =>
-        m.text.toLowerCase().includes(q) ||
-        m.entities.some(e => e.toLowerCase().includes(q)) ||
-        m.topic.includes(q)
+      list = list.filter(c =>
+        c.event_summary.toLowerCase().includes(q) ||
+        c.event_type.toLowerCase().includes(q)
       );
     }
     return sortOrder === 'newest'
-      ? [...list].sort((a, b) => b.created_at - a.created_at)
-      : [...list].sort((a, b) => a.created_at - b.created_at);
-  }, [memories, search, topicFilter, showFlagged, sortOrder]);
+      ? [...list].sort((a, b) => b.started_at - a.started_at)
+      : [...list].sort((a, b) => a.started_at - b.started_at);
+  }, [clusters, search, topicFilter, sortOrder]);
 
-  const totalWords  = memories.reduce((s, m) => s + m.words, 0);
-  const flaggedCount = memories.filter(m => m.flagged).length;
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontFamily: MONO, fontSize: 12, color: tok.textMuted }}>
+      loading memory…
+    </div>
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, animation: 'slide-up 200ms ease' }}>
 
-      {/* ── Stats strip ── */}
+      {/* Stats strip */}
       <div style={{
         display: 'flex', gap: 20, flexWrap: 'wrap',
         padding: '10px 16px',
@@ -381,7 +204,7 @@ function MemoryContent({ tok }) {
       }}>
         <div>
           <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: tok.textPrimary, letterSpacing: -0.5 }}>
-            1,847
+            {overview ? overview.total_clusters.toLocaleString() : '—'}
           </div>
           <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled, letterSpacing: 0.5, textTransform: 'uppercase' }}>
             clusters
@@ -390,39 +213,28 @@ function MemoryContent({ tok }) {
         <div style={{ width: 1, background: tok.borderSubtle, alignSelf: 'stretch' }} />
         <div>
           <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: tok.textPrimary, letterSpacing: -0.5 }}>
-            284k
-          </div>
-          <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-            words
-          </div>
-        </div>
-        <div style={{ width: 1, background: tok.borderSubtle, alignSelf: 'stretch' }} />
-        <div>
-          <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: flaggedCount > 0 ? tok.warning : tok.textPrimary, letterSpacing: -0.5 }}>
-            {flaggedCount}
-          </div>
-          <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-            flagged
-          </div>
-        </div>
-        <div style={{ width: 1, background: tok.borderSubtle, alignSelf: 'stretch' }} />
-        <div>
-          <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: tok.textPrimary, letterSpacing: -0.5 }}>
-            312
+            {overview ? overview.total_entities.toLocaleString() : '—'}
           </div>
           <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled, letterSpacing: 0.5, textTransform: 'uppercase' }}>
             entities
           </div>
         </div>
+        <div style={{ width: 1, background: tok.borderSubtle, alignSelf: 'stretch' }} />
+        <div>
+          <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: tok.textPrimary, letterSpacing: -0.5 }}>
+            {clusters.length.toLocaleString()}
+          </div>
+          <div style={{ fontFamily: MONO, fontSize: 9.5, color: tok.textDisabled, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            loaded
+          </div>
+        </div>
       </div>
 
-      {/* ── Toolbar ── */}
+      {/* Toolbar */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-
-        {/* Search */}
         <input
           type="text"
-          placeholder="search memories or entities…"
+          placeholder="search clusters…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{
@@ -433,19 +245,17 @@ function MemoryContent({ tok }) {
           }}
         />
 
-        {/* Topic filter */}
-        {!isMobile && (
+        {!isMobile && topics.length > 0 && (
           <select value={topicFilter} onChange={e => setTopicFilter(e.target.value)} style={{
             fontFamily: MONO, fontSize: 11, color: tok.textSecondary,
             background: tok.surface, border: `1px solid ${tok.border}`,
             borderRadius: 9, padding: '7px 12px', cursor: 'pointer', outline: 'none',
           }}>
-            <option value="ALL">all topics</option>
-            {TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
+            <option value="ALL">all types</option>
+            {topics.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
 
-        {/* Sort */}
         <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} style={{
           fontFamily: MONO, fontSize: 11, color: tok.textSecondary,
           background: tok.surface, border: `1px solid ${tok.border}`,
@@ -454,24 +264,9 @@ function MemoryContent({ tok }) {
           <option value="newest">newest first</option>
           <option value="oldest">oldest first</option>
         </select>
-
-        {/* Flagged toggle */}
-        <button
-          onClick={() => setShowFlagged(f => !f)}
-          style={{
-            fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
-            padding: '7px 14px', borderRadius: 9, cursor: 'pointer', outline: 'none',
-            border: `1px solid ${showFlagged ? tok.warning : tok.border}`,
-            background: showFlagged ? tok.warningSubtle : tok.surface,
-            color: showFlagged ? tok.warning : tok.textMuted,
-            transition: 'all 120ms',
-          }}
-        >
-          {isMobile ? 'FLAGGED' : `FLAGGED${flaggedCount > 0 ? ` · ${flaggedCount}` : ''}`}
-        </button>
       </div>
 
-      {/* ── Memory grid ── */}
+      {/* Grid */}
       {filtered.length === 0 ? (
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -479,7 +274,7 @@ function MemoryContent({ tok }) {
           borderRadius: 14,
         }}>
           <div style={{ fontFamily: MONO, fontSize: 11, color: tok.textDisabled, letterSpacing: 0.5 }}>
-            no memories match filter
+            {search || topicFilter !== 'ALL' ? 'no clusters match filter' : 'no clusters yet'}
           </div>
         </div>
       ) : (
@@ -497,16 +292,35 @@ function MemoryContent({ tok }) {
               expanded={expandedId === mem.id}
               onToggle={() => setExpandedId(id => id === mem.id ? null : mem.id)}
               onFlag={handleFlag}
+              flagging={flagging.has(mem.id)}
             />
           ))}
         </div>
       )}
 
-      {/* ── Footer count ── */}
+      {/* Load more */}
+      {hasMore && filtered.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            style={{
+              fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
+              padding: '8px 20px', borderRadius: 9, cursor: loadingMore ? 'wait' : 'pointer',
+              border: `1px solid ${tok.border}`, background: tok.surface, color: tok.textMuted,
+              opacity: loadingMore ? 0.6 : 1, outline: 'none',
+            }}
+          >
+            {loadingMore ? 'loading…' : 'load more'}
+          </button>
+        </div>
+      )}
+
+      {/* Footer */}
       <div style={{ fontFamily: MONO, fontSize: 10, color: tok.textDisabled, letterSpacing: 0.3, textAlign: 'center', paddingBottom: 4 }}>
-        {filtered.length !== memories.length
-          ? `showing ${filtered.length} of ${memories.length} loaded clusters`
-          : `showing ${filtered.length} clusters · 1,847 total`}
+        {filtered.length !== clusters.length
+          ? `showing ${filtered.length} of ${clusters.length} loaded clusters`
+          : `showing ${filtered.length} clusters`}
       </div>
 
     </div>

@@ -87,10 +87,19 @@ impl ClusterProcessor {
 
         let transcript_texts: Vec<&str> = transcripts.iter().map(|t| t.content.as_str()).collect();
         let language = detect_iso639(&transcript_texts);
-        let score = match self.score_cluster(&transcript_texts).await {
+
+        let (score_result, entities_result) = tokio::join!(
+            self.score_cluster(&transcript_texts),
+            self.extract_entities(&transcript_texts),
+        );
+
+        let score = match score_result {
             Ok(s) => s,
             Err(error) => {
-                tracing::warn!(cluster_id = %open_cluster.cluster_id, %error, "cluster scoring failed — using fallback");
+                tracing::warn!(
+                    cluster_id = %open_cluster.cluster_id, %error,
+                    "cluster scoring failed — using fallback"
+                );
                 let summary: String = transcript_texts.join(" ").chars().take(200).collect();
                 ClusterScoreResponse {
                     event_type: "unclassified".to_string(),
@@ -140,7 +149,19 @@ impl ClusterProcessor {
             )
             .await?;
 
-        self.process_entities(&transcript_texts, &cluster.id, closed_at).await?;
+        match entities_result {
+            Ok(extracted) => {
+                if let Err(error) = self.store_entities(extracted, &cluster.id, closed_at).await {
+                    tracing::warn!(cluster_id = %cluster.id, %error, "entity storage failed");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    cluster_id = %cluster.id, %error,
+                    "entity extraction failed — skipping"
+                );
+            }
+        }
 
         let _ = self.event_sender.send(ServerEvent::ClusterReady {
             session_id: open_cluster.session_id.clone(),
@@ -150,20 +171,12 @@ impl ClusterProcessor {
         Ok(())
     }
 
-    async fn process_entities(
+    async fn store_entities(
         &self,
-        transcript_texts: &[&str],
+        extracted: Vec<ExtractedEntity>,
         cluster_id: &str,
         timestamp: i64,
     ) -> Result<(), OmbraError> {
-        let extracted = match self.extract_entities(transcript_texts).await {
-            Ok(entities) => entities,
-            Err(error) => {
-                tracing::warn!(%cluster_id, %error, "entity extraction failed — skipping");
-                return Ok(());
-            }
-        };
-
         if extracted.is_empty() {
             return Ok(());
         }

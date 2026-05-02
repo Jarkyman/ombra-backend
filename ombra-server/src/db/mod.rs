@@ -1,8 +1,10 @@
 pub mod analytics;
 pub mod cluster;
+pub mod device;
 pub mod entity;
 pub mod session;
 pub mod transcript;
+pub mod profile_facts;
 pub mod user_profile;
 
 #[cfg(test)]

@@ -58,7 +58,7 @@ pub async fn list_clusters(
     offset: i64,
 ) -> Result<Vec<Cluster>, OmbraError> {
     sqlx::query_as::<_, Cluster>(
-        "SELECT * FROM clusters ORDER BY started_at DESC LIMIT ? OFFSET ?",
+        "SELECT * FROM clusters WHERE flagged_at IS NULL ORDER BY started_at DESC LIMIT ? OFFSET ?",
     )
     .bind(limit)
     .bind(offset)
@@ -72,7 +72,7 @@ pub async fn list_clusters_by_session(
     session_id: &str,
 ) -> Result<Vec<Cluster>, OmbraError> {
     sqlx::query_as::<_, Cluster>(
-        "SELECT * FROM clusters WHERE session_id = ? ORDER BY started_at ASC",
+        "SELECT * FROM clusters WHERE session_id = ? AND flagged_at IS NULL ORDER BY started_at ASC",
     )
     .bind(session_id)
     .fetch_all(pool)
@@ -158,6 +158,91 @@ pub async fn insert_cluster_with_transcripts(
         .map_err(|e| OmbraError::Storage(format!("commit cluster transaction: {e}")))?;
 
     Ok(cluster)
+}
+
+// ── Trash ──────────────────────────────────────────────────────────────────────
+
+#[derive(FromRow)]
+#[allow(dead_code)]
+pub struct TrashedCluster {
+    pub id: String,
+    pub session_id: String,
+    pub started_at: i64,
+    pub closed_at: i64,
+    pub event_type: String,
+    pub relevance_score: f32,
+    pub event_summary: String,
+    pub language: String,
+    pub flagged_at: i64,
+    pub flagged_by: String,
+}
+
+pub async fn list_trashed_clusters(pool: &DatabasePool) -> Result<Vec<TrashedCluster>, OmbraError> {
+    sqlx::query_as::<_, TrashedCluster>(
+        "SELECT id, session_id, started_at, closed_at, event_type, relevance_score,
+                event_summary, language, flagged_at, flagged_by
+         FROM clusters
+         WHERE flagged_at IS NOT NULL
+         ORDER BY flagged_at DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| OmbraError::Storage(format!("list trashed clusters: {e}")))
+}
+
+pub async fn flag_cluster(
+    pool: &DatabasePool,
+    id: &str,
+    flagged_by: &str,
+) -> Result<bool, OmbraError> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let rows = sqlx::query(
+        "UPDATE clusters SET flagged_at = ?, flagged_by = ? WHERE id = ? AND flagged_at IS NULL",
+    )
+    .bind(now)
+    .bind(flagged_by)
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| OmbraError::Storage(format!("flag cluster: {e}")))?;
+
+    Ok(rows.rows_affected() > 0)
+}
+
+pub async fn restore_cluster(pool: &DatabasePool, id: &str) -> Result<bool, OmbraError> {
+    let rows = sqlx::query(
+        "UPDATE clusters SET flagged_at = NULL, flagged_by = NULL WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .map_err(|e| OmbraError::Storage(format!("restore cluster: {e}")))?;
+
+    Ok(rows.rows_affected() > 0)
+}
+
+pub async fn delete_cluster(pool: &DatabasePool, id: &str) -> Result<bool, OmbraError> {
+    let rows = sqlx::query("DELETE FROM clusters WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| OmbraError::Storage(format!("delete cluster: {e}")))?;
+
+    Ok(rows.rows_affected() > 0)
+}
+
+pub async fn delete_all_trashed_clusters(pool: &DatabasePool) -> Result<i64, OmbraError> {
+    let rows =
+        sqlx::query("DELETE FROM clusters WHERE flagged_at IS NOT NULL")
+            .execute(pool)
+            .await
+            .map_err(|e| OmbraError::Storage(format!("empty trash: {e}")))?;
+
+    Ok(rows.rows_affected() as i64)
 }
 
 #[cfg(test)]

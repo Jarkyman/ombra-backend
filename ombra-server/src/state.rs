@@ -12,6 +12,7 @@ use ombra_common::config::AppConfig;
 use crate::db::DatabasePool;
 use crate::events::ServerEvent;
 use crate::ingestion::IngestionPipeline;
+use crate::log_buffer::LogBuffer;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -22,6 +23,8 @@ pub struct AppState {
     pub vector_store: Arc<QdrantVectorStore>,
     pub config: Arc<RwLock<AppConfig>>,
     pub config_path: PathBuf,
+    pub provision_token_path: PathBuf,
     pub user_profile_summary: Arc<RwLock<Option<String>>>,
     pub event_broadcast: broadcast::Sender<ServerEvent>,
+    pub log_buffer: LogBuffer,
 }

@@ -2,6 +2,7 @@ mod db;
 mod events;
 mod handlers;
 mod ingestion;
+mod log_buffer;
 mod network;
 mod onboarding;
 mod provision;
@@ -18,7 +19,10 @@ use std::time::Duration;
 use axum_server::tls_rustls::RustlsConfig;
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
+
+use log_buffer::{LogBuffer, LogBufferLayer};
 
 use events::ServerEvent;
 
@@ -41,8 +45,11 @@ async fn main() {
         .install_default()
         .expect("failed to install rustls crypto provider");
 
-    tracing_subscriber::fmt()
-        .json()
+    let log_buffer = LogBuffer::new();
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().json())
+        .with(LogBufferLayer::new(log_buffer.clone()))
         .init();
 
     let config = AppConfig::load(CONFIG_PATH.as_ref()).unwrap_or_else(|_| {
@@ -118,8 +125,10 @@ async fn main() {
         vector_store,
         config: Arc::new(RwLock::new(config.clone())),
         config_path: PathBuf::from(CONFIG_PATH),
+        provision_token_path: PathBuf::from("provision_token"),
         user_profile_summary: Arc::new(RwLock::new(user_profile_summary)),
         event_broadcast,
+        log_buffer,
     };
 
     network::start(&config).await;
@@ -153,10 +162,56 @@ async fn main() {
 
     info!(component = "ombra-server", %address, "starting with mTLS");
 
+    register_client_cert(&app_state.database_pool, &config).await;
+
     axum_server::bind_rustls(address, rustls_config)
         .serve(router::build(app_state).into_make_service())
         .await
         .expect("server failed");
+}
+
+async fn register_client_cert(pool: &db::DatabasePool, config: &AppConfig) {
+    let cert_bytes = match std::fs::read(&config.tls_client_cert_path) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(%e, "could not read client cert for device registration");
+            return;
+        }
+    };
+
+    let mut reader = std::io::BufReader::new(cert_bytes.as_slice());
+    let der = match rustls_pemfile::certs(&mut reader).next() {
+        Some(Ok(d)) => d,
+        _ => {
+            tracing::warn!("no cert found in client cert file");
+            return;
+        }
+    };
+
+    let cn = match x509_parser::parse_x509_certificate(der.as_ref()) {
+        Ok((_, cert)) => cert
+            .subject()
+            .iter_common_name()
+            .next()
+            .and_then(|a| a.as_str().ok())
+            .unwrap_or("unknown")
+            .to_string(),
+        Err(e) => {
+            tracing::warn!(%e, "could not parse client cert for device registration");
+            return;
+        }
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    if let Err(e) = db::device::upsert_device(pool, &cn, &cn, now).await {
+        tracing::warn!(%e, "could not register client cert as trusted device");
+    } else {
+        tracing::info!(component = "devices", %cn, "client cert registered as trusted device");
+    }
 }
 
 async fn connect_qdrant_with_retry(

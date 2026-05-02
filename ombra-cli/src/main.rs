@@ -22,7 +22,8 @@ async fn main() {
 
     match args.command {
         OmbraCommand::Dashboard => tui::launch().await,
-        OmbraCommand::Status => commands::print_status().await,
+        OmbraCommand::Status  => commands::print_status().await,
+        OmbraCommand::Upgrade => commands::run_upgrade(),
         OmbraCommand::Install => install::run(),
     }
 }

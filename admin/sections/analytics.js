@@ -8,175 +8,35 @@ function localDateStr(d) {
 function fmtBytes(b) { return b < 1024*1024 ? `${(b/1024).toFixed(0)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`; }
 function fmtNum(n)   { return n >= 10000 ? `${(n/1000).toFixed(1)}k` : n.toLocaleString(); }
 
-// ─── mock data generation ─────────────────────────────────────────────────────
+// ─── format API daily data into chart bars ────────────────────────────────────
 
-const ET_KEYS   = ['meeting','conversation','ambient','learning','task','unclassified'];
-const ET_W      = [0.25,0.23,0.16,0.14,0.12,0.10];
-const LANG_KEYS = ['da','en','de'];
-const LANG_W    = [0.66,0.30,0.04];
+function formatBars(days, range) {
+  if (!days || !days.length) return [];
 
-function splitClusters(total, keys, weights) {
-  const out = {};
-  let rem = total;
-  keys.forEach((k, i) => {
-    if (i === keys.length - 1) { out[k] = Math.max(0, rem); return; }
-    const w = Math.max(0, weights[i] + (Math.random() - 0.5) * 0.06);
-    const n = Math.min(Math.round(total * w), rem);
-    out[k] = n; rem -= n;
-  });
-  return out;
-}
+  const addLabel = (day) => {
+    const dt = new Date(`${day.date}T12:00:00`);
+    return { ...day, label: `${dt.getMonth()+1}/${dt.getDate()}`, avg_relevance: day.avg_relevance || 0 };
+  };
 
-function generateHourlyData() {
-  const now = new Date(); now.setMinutes(0, 0, 0);
-  return Array.from({ length: 168 }, (_, i) => {
-    const d = new Date(now - (167 - i) * 3_600_000);
-    const h = d.getHours();
-    const isWork    = h >= 8 && h <= 19;
-    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    const prob      = isWeekend ? (isWork ? 0.35 : 0.04) : (isWork ? 0.9 : 0.07);
-    const clusters  = Math.random() < prob ? Math.ceil(Math.random() * 2) : 0;
-    return {
-      ts: d.getTime(), date: localDateStr(d), hour: h,
-      clusters, new_entities: clusters > 0 && Math.random() < 0.06 ? 1 : 0,
-      avg_relevance:  clusters > 0 ? +(0.35 + Math.random() * 0.52).toFixed(3) : null,
-      event_type_dist: splitClusters(clusters, ET_KEYS, ET_W),
-      language_dist:   splitClusters(clusters, LANG_KEYS, LANG_W),
-    };
-  });
-}
-
-function generateDailyData() {
-  const now = new Date();
-  return Array.from({ length: 365 }, (_, i) => {
-    const d = new Date(now); d.setDate(d.getDate() - (364 - i));
-    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    const clusters  = Math.max(0, Math.round((isWeekend ? 2 : 7) + (Math.random() - 0.35) * 6));
-    return {
-      date: localDateStr(d), clusters,
-      new_entities:  clusters > 0 && Math.random() < 0.25 ? Math.ceil(Math.random() * 3) : 0,
-      avg_relevance: clusters > 0 ? +(0.35 + Math.random() * 0.52).toFixed(3) : null,
-      event_type_dist: splitClusters(clusters, ET_KEYS, ET_W),
-      language_dist:   splitClusters(clusters, LANG_KEYS, LANG_W),
-    };
-  });
-}
-
-const ALL_HOURS = generateHourlyData();
-const ALL_DAYS  = generateDailyData();
-
-// ─── entity mock data ─────────────────────────────────────────────────────────
-
-const BASE_ENTITIES = [
-  { id:'e1',  name:'Lars Hansen',   entity_type:'person',  base:42 },
-  { id:'e2',  name:'Ombra App',     entity_type:'project', base:38 },
-  { id:'e3',  name:'Rust',          entity_type:'topic',   base:35 },
-  { id:'e4',  name:'Sofie',         entity_type:'person',  base:28 },
-  { id:'e5',  name:'Qdrant',        entity_type:'topic',   base:27 },
-  { id:'e6',  name:'Project Lumen', entity_type:'project', base:24 },
-  { id:'e7',  name:'Prolog Coffee', entity_type:'place',   base:18 },
-  { id:'e8',  name:'Running',       entity_type:'topic',   base:16 },
-  { id:'e9',  name:'Henrik',        entity_type:'person',  base:14 },
-  { id:'e10', name:'Embeddings',    entity_type:'topic',   base:12 },
-];
-
-function scaleEntities(days) {
-  return BASE_ENTITIES
-    .map(e => ({
-      id: e.id, name: e.name, entity_type: e.entity_type,
-      encounter_count: Math.max(0, Math.round(e.base * (days / 365) * (0.75 + Math.random() * 0.5))),
-    }))
-    .filter(e => e.encounter_count > 0)
-    .sort((a, b) => b.encounter_count - a.encounter_count);
-}
-
-const ENTITIES_BY_RANGE = {
-  '1d':  scaleEntities(1),
-  '7d':  scaleEntities(7),
-  '30d': scaleEntities(30),
-  '1y':  scaleEntities(365),
-  'all': scaleEntities(365),
-};
-
-// ─── aggregation ──────────────────────────────────────────────────────────────
-
-function aggregateChunk(pts, labelFn) {
-  const clusters     = pts.reduce((s, p) => s + p.clusters, 0);
-  const new_entities = pts.reduce((s, p) => s + p.new_entities, 0);
-  const active       = pts.filter(p => p.avg_relevance != null && p.clusters > 0);
-  const avg_relevance = active.length
-    ? active.reduce((s, p) => s + p.avg_relevance, 0) / active.length : 0;
-
-  const event_type_dist = {}, language_dist = {};
-  pts.forEach(p => {
-    Object.entries(p.event_type_dist || {}).forEach(([k,v]) => { event_type_dist[k] = (event_type_dist[k]||0)+v; });
-    Object.entries(p.language_dist   || {}).forEach(([k,v]) => { language_dist[k]   = (language_dist[k]  ||0)+v; });
-  });
-
-  return { label: labelFn(pts), clusters, new_entities, avg_relevance, event_type_dist, language_dist };
-}
-
-function buildBars(range) {
-  if (range === '1d') {
-    return Array.from({ length: 24 }, (_, i) => {
-      const chunk = ALL_HOURS.slice(-24 + i, -24 + i + 1);
-      if (!chunk.length) return { label:`${String(i).padStart(2,'0')}:00`, clusters:0, new_entities:0, avg_relevance:0, event_type_dist:{}, language_dist:{} };
-      return aggregateChunk(chunk, pts => { const d = new Date(pts[0].ts); return `${String(d.getHours()).padStart(2,'0')}:00`; });
-    });
+  if (range === '1d' || range === '7d' || range === '30d') {
+    return days.map(addLabel);
   }
-  if (range === '7d') {
-    return Array.from({ length: 28 }, (_, i) => {
-      const chunk = ALL_HOURS.slice(i * 6, i * 6 + 6);
-      return aggregateChunk(chunk, pts => {
-        const first = pts[0];
-        return (first.hour === 0 || i === 0)
-          ? (() => { const d = new Date(first.ts); return `${d.getMonth()+1}/${d.getDate()}`; })()
-          : `${String(first.hour).padStart(2,'0')}h`;
-      });
-    });
+
+  // 1y and all: aggregate into weekly groups
+  const grouped = [];
+  for (let i = 0; i < days.length; i += 7) {
+    const chunk = days.slice(i, i + 7);
+    const clusters     = chunk.reduce((s, d) => s + d.clusters, 0);
+    const new_entities = chunk.reduce((s, d) => s + d.new_entities, 0);
+    const active       = chunk.filter(d => d.avg_relevance && d.clusters > 0);
+    const avg_relevance = active.length
+      ? active.reduce((s, d) => s + d.avg_relevance, 0) / active.length
+      : 0;
+    const dt = new Date(`${chunk[0].date}T12:00:00`);
+    grouped.push({ date: chunk[0].date, label: `${dt.getMonth()+1}/${dt.getDate()}`, clusters, new_entities, avg_relevance });
   }
-  if (range === '30d') {
-    return ALL_DAYS.slice(-30).map(d => {
-      const dt = new Date(`${d.date}T12:00:00`);
-      return { ...d, label:`${dt.getMonth()+1}/${dt.getDate()}`, avg_relevance: d.avg_relevance || 0 };
-    });
-  }
-  if (range === '1y') {
-    const days = ALL_DAYS.slice(-364);
-    return Array.from({ length: 52 }, (_, w) => {
-      const chunk = days.slice(w * 7, w * 7 + 7);
-      return aggregateChunk(chunk, pts => { const dt = new Date(`${pts[0].date}T12:00:00`); return `${dt.getMonth()+1}/${dt.getDate()}`; });
-    });
-  }
-  const n = ALL_DAYS.length, cs = n / 52;
-  return Array.from({ length: 52 }, (_, i) => {
-    const chunk = ALL_DAYS.slice(Math.round(i * cs), Math.round((i+1) * cs));
-    return aggregateChunk(chunk, pts => { const dt = new Date(`${pts[0].date}T12:00:00`); return `${dt.getMonth()+1}/${dt.getDate()}`; });
-  });
+  return grouped;
 }
-
-function deriveDist(bars, field, nameKey) {
-  const totals = {};
-  bars.forEach(b => Object.entries(b[field] || {}).forEach(([k,v]) => { totals[k] = (totals[k]||0)+v; }));
-  const total = Object.values(totals).reduce((s,c) => s+c, 0);
-  return Object.entries(totals)
-    .filter(([_,c]) => c > 0)
-    .sort((a,b) => b[1]-a[1])
-    .map(([key, count]) => ({
-      [nameKey]: key, count,
-      percentage: total > 0 ? +((count/total)*100).toFixed(1) : 0,
-    }));
-}
-
-// ─── overview (all-time) ──────────────────────────────────────────────────────
-
-const MOCK_OVERVIEW = {
-  total_transcripts: 12847,
-  total_clusters: 1243,
-  total_entities: 87,
-  entities_with_profile: 23,
-  db_size_bytes: 48 * 1024 * 1024,
-};
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -184,11 +44,11 @@ const EVENT_PALETTE = ['#8B7CF6','#D4956A','#6BA98F','#E57373','#7BA8C4','#A09A9
 const ENTITY_COLOR  = { person:'#8B7CF6', project:'#D4956A', place:'#6BA98F', topic:'#A09A94' };
 
 const RANGE_LABEL = {
-  '1d':  '24 bars · 1h each',
-  '7d':  '28 bars · 6h each',
-  '30d': '30 bars · daily',
-  '1y':  '52 bars · weekly',
-  'all': '52 bars · all time',
+  '1d':  '24h window · daily bars',
+  '7d':  '7 days · daily bars',
+  '30d': '30 days · daily bars',
+  '1y':  '1 year · weekly bars',
+  'all': 'all time · weekly bars',
 };
 
 // ─── Tooltip ──────────────────────────────────────────────────────────────────
@@ -264,15 +124,15 @@ function ChartCard({ tok, title, children, style = {} }) {
   );
 }
 
-// ─── ActivityHeatmap (always 52 weeks) ────────────────────────────────────────
+// ─── ActivityHeatmap ──────────────────────────────────────────────────────────
 
-function ActivityHeatmap({ tok }) {
+function ActivityHeatmap({ tok, days }) {
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
   const layoutRef    = useRef({});
 
-  const countByDate = useMemo(() => { const m = {}; ALL_DAYS.forEach(d => { m[d.date] = d.clusters; }); return m; }, []);
-  const maxCount    = useMemo(() => Math.max(...ALL_DAYS.map(d => d.clusters), 1), []);
+  const countByDate = useMemo(() => { const m = {}; days.forEach(d => { m[d.date] = d.clusters; }); return m; }, [days]);
+  const maxCount    = useMemo(() => Math.max(...days.map(d => d.clusters), 1), [days]);
 
   useEffect(() => {
     const canvas = canvasRef.current, container = containerRef.current;
@@ -330,14 +190,12 @@ function ActivityHeatmap({ tok }) {
     return () => ro.disconnect();
   }, [countByDate, maxCount, tok]);
 
-  // Tooltip
   const [tooltip, setTooltip] = useState(null);
   const onMouseMove = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     const { cells } = layoutRef.current;
     if (!cells) return;
     const hit = cells.find(c => mx >= c.x && mx <= c.x + c.w && my >= c.y && my <= c.y + c.h);
@@ -423,8 +281,7 @@ function BarChart({ bars, tok }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     const { rects } = layoutRef.current;
     if (!rects) return;
     const hit = rects.find(r => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h);
@@ -532,18 +389,12 @@ function RelevanceHistogram({ bars, tok }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     const { PL, slotW, PT, CH } = layoutRef.current;
     if (!slotW || mx < PL || my < PT || my > PT + CH) { setTooltip(null); return; }
     const idx = Math.min(Math.floor((mx - PL) / slotW), 9);
     if (idx < 0) { setTooltip(null); return; }
-    setTooltip({
-      x: e.clientX, y: e.clientY,
-      count: buckets[idx],
-      rangeStart: (idx * 0.1).toFixed(1),
-      rangeEnd: ((idx + 1) * 0.1).toFixed(1),
-    });
+    setTooltip({ x: e.clientX, y: e.clientY, count: buckets[idx], rangeStart: (idx * 0.1).toFixed(1), rangeEnd: ((idx + 1) * 0.1).toFixed(1) });
   };
 
   return (
@@ -598,7 +449,7 @@ function DonutChart({ data, tok }) {
     ctx.textBaseline = 'alphabetic';
   }, [data, tok]);
 
-  if (!data.length) return <EmptyChart tok={tok} message="no clusters in this range" />;
+  if (!data.length) return <EmptyChart tok={tok} message="no clusters yet" />;
 
   return (
     <div style={{ display:'flex', alignItems:'center', gap:20, flexWrap:'wrap' }}>
@@ -619,7 +470,7 @@ function DonutChart({ data, tok }) {
 // ─── LanguageBars ─────────────────────────────────────────────────────────────
 
 function LanguageBars({ languages, tok }) {
-  if (!languages.length) return <EmptyChart tok={tok} message="no clusters in this range" />;
+  if (!languages.length) return <EmptyChart tok={tok} message="no clusters yet" />;
   const max = Math.max(...languages.map(l => l.count), 1);
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
@@ -751,7 +602,7 @@ function EntityGrowthChart({ bars, tok }) {
 // ─── TopEntitiesTable ─────────────────────────────────────────────────────────
 
 function TopEntitiesTable({ entities, tok }) {
-  if (!entities.length) return <EmptyChart tok={tok} message="no entity encounters in this range" />;
+  if (!entities.length) return <EmptyChart tok={tok} message="no entities tracked yet" />;
   const maxCount = Math.max(...entities.map(e => e.encounter_count), 1);
   return (
     <div>
@@ -779,28 +630,14 @@ function TopEntitiesTable({ entities, tok }) {
 
 // ─── EncounterDistribution ────────────────────────────────────────────────────
 
-function EncounterDistribution({ entities, tok }) {
+function EncounterDistribution({ buckets, tok }) {
   const [tooltip, setTooltip] = useState(null);
-
-  const buckets = useMemo(() => {
-    const b = { '1–5':0, '6–20':0, '21–50':0, '51+':0 };
-    entities.forEach(e => {
-      if      (e.encounter_count <= 5)  b['1–5']++;
-      else if (e.encounter_count <= 20) b['6–20']++;
-      else if (e.encounter_count <= 50) b['21–50']++;
-      else                              b['51+']++;
-    });
-    return Object.entries(b).map(([bucket, count]) => ({ bucket, count }));
-  }, [entities]);
-
-  if (!entities.length) return <EmptyChart tok={tok} message="no entity encounters in this range" />;
+  if (!buckets || !buckets.length) return <EmptyChart tok={tok} message="no entities tracked yet" />;
   const max = Math.max(...buckets.map(b => b.count), 1);
   return (
     <div style={{ display:'flex', gap:10, alignItems:'flex-end', height:80 }}>
       {buckets.map(b => (
-        <div
-          key={b.bucket}
-          style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:5, cursor:'default' }}
+        <div key={b.bucket} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:5, cursor:'default' }}
           onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY, ...b })}
           onMouseLeave={() => setTooltip(null)}
         >
@@ -822,45 +659,79 @@ function EncounterDistribution({ entities, tok }) {
 // ─── AnalyticsContent ─────────────────────────────────────────────────────────
 
 function AnalyticsContent({ tok }) {
-  const [range, setRange] = useState('30d');
+  const [range,       setRange]       = useState('30d');
+  const [overview,    setOverview]    = useState(null);
+  const [bars,        setBars]        = useState([]);
+  const [heatmapDays, setHeatmapDays] = useState([]);
+  const [entityStats, setEntityStats] = useState(null);
+  const [languages,   setLanguages]   = useState([]);
+  const [eventTypes,  setEventTypes]  = useState([]);
+  const [loading,     setLoading]     = useState(true);
+
   const width    = useWindowWidth();
   const isNarrow = width < 1080;
 
-  const bars = useMemo(() => buildBars(range), [range]);
+  useEffect(() => {
+    Promise.all([
+      fetch('/admin/analytics/overview').then(r => r.json()),
+      fetch('/admin/analytics/activity?range=all').then(r => r.json()),
+      fetch('/admin/analytics/entities').then(r => r.json()),
+      fetch('/admin/analytics/languages').then(r => r.json()),
+      fetch('/admin/analytics/event-types').then(r => r.json()),
+    ]).then(([ov, allAct, ents, langs, evTypes]) => {
+      setOverview(ov);
+      setHeatmapDays(allAct.days || []);
+      setEntityStats(ents);
+      setLanguages(langs.languages || []);
+      setEventTypes(evTypes.event_types || []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
-  const totalInRange = useMemo(() => bars.reduce((s,b) => s+b.clusters, 0), [bars]);
+  useEffect(() => {
+    fetch(`/admin/analytics/activity?range=${range}`)
+      .then(r => r.json())
+      .then(data => setBars(formatBars(data.days || [], range)))
+      .catch(() => {});
+  }, [range]);
+
+  const totalInRange = useMemo(() => bars.reduce((s, b) => s + b.clusters, 0), [bars]);
 
   const avgRelevance = useMemo(() => {
     const active = bars.filter(b => b.clusters > 0 && b.avg_relevance > 0);
     if (!active.length) return '—';
-    const totalC = active.reduce((s,b) => s+b.clusters, 0);
-    return (active.reduce((s,b) => s+b.avg_relevance*b.clusters, 0) / totalC).toFixed(2);
+    const totalC = active.reduce((s, b) => s + b.clusters, 0);
+    return (active.reduce((s, b) => s + b.avg_relevance * b.clusters, 0) / totalC).toFixed(2);
   }, [bars]);
 
-  const eventTypeData = useMemo(() => deriveDist(bars, 'event_type_dist', 'event_type'), [bars]);
-  const languageData  = useMemo(() => deriveDist(bars, 'language_dist',   'language'),   [bars]);
-  const entities      = ENTITIES_BY_RANGE[range] || [];
+  if (loading) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:64, fontFamily:SANS, fontSize:13, color:tok.textMuted }}>
+        Loading analytics…
+      </div>
+    );
+  }
+
+  const topEntities         = entityStats?.top_entities || [];
+  const encounterBuckets    = entityStats?.encounter_distribution || [];
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
-      {/* Range picker row */}
       <div style={{ display:'flex', justifyContent:'flex-end' }}>
         <RangePicker value={range} onChange={setRange} tok={tok} />
       </div>
 
-      {/* Stat row — 3 all-time + 2 range-specific */}
       <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
-        <StatCard tok={tok} label="Total Transcripts" value={fmtNum(MOCK_OVERVIEW.total_transcripts)} sub="all time" muted />
-        <StatCard tok={tok} label="Total Entities"    value={MOCK_OVERVIEW.total_entities} sub={`${MOCK_OVERVIEW.entities_with_profile} with profile · all time`} muted />
-        <StatCard tok={tok} label="Database Size"     value={fmtBytes(MOCK_OVERVIEW.db_size_bytes)} sub="all time" muted />
-        <StatCard tok={tok} label="Clusters in range" value={totalInRange.toLocaleString()} sub={RANGE_LABEL[range]} />
-        <StatCard tok={tok} label="Avg Relevance"     value={avgRelevance} sub={RANGE_LABEL[range]} />
+        <StatCard tok={tok} label="Total Transcripts" value={fmtNum(overview?.total_transcripts ?? 0)} sub="all time" muted />
+        <StatCard tok={tok} label="Total Entities"    value={overview?.total_entities ?? 0}            sub={`${overview?.entities_with_profile ?? 0} with profile · all time`} muted />
+        <StatCard tok={tok} label="Database Size"     value={fmtBytes(overview?.db_size_bytes ?? 0)}   sub="all time" muted />
+        <StatCard tok={tok} label="Clusters in range" value={totalInRange.toLocaleString()}             sub={RANGE_LABEL[range]} />
+        <StatCard tok={tok} label="Avg Relevance"     value={avgRelevance}                              sub={RANGE_LABEL[range]} />
       </div>
 
-      {/* Heatmap — always 52 weeks, explicitly labelled */}
       <ChartCard tok={tok} title="Activity — Last 52 Weeks (independent of range)">
-        <ActivityHeatmap tok={tok} />
+        <ActivityHeatmap tok={tok} days={heatmapDays} />
         <div style={{ display:'flex', alignItems:'center', gap:5, justifyContent:'flex-end' }}>
           <span style={{ fontFamily:MONO, fontSize:9, color:tok.textMuted }}>Less</span>
           {[0,0.2,0.45,0.7,1.0].map((a,i) => (
@@ -870,7 +741,6 @@ function AnalyticsContent({ tok }) {
         </div>
       </ChartCard>
 
-      {/* Bar chart + Relevance histogram */}
       <div style={{ display:'flex', flexDirection: isNarrow ? 'column' : 'row', gap:14 }}>
         <ChartCard tok={tok} title={`Clusters · ${totalInRange.toLocaleString()} total · ${RANGE_LABEL[range]}`} style={{ flex:3 }}>
           {totalInRange === 0
@@ -890,29 +760,26 @@ function AnalyticsContent({ tok }) {
         </ChartCard>
       </div>
 
-      {/* Donut + Language bars */}
       <div style={{ display:'flex', flexDirection: isNarrow ? 'column' : 'row', gap:14 }}>
-        <ChartCard tok={tok} title="Event Type Breakdown" style={{ flex:1 }}>
-          <DonutChart data={eventTypeData} tok={tok} />
+        <ChartCard tok={tok} title="Event Type Breakdown · all time" style={{ flex:1 }}>
+          <DonutChart data={eventTypes} tok={tok} />
         </ChartCard>
-        <ChartCard tok={tok} title="Language Distribution" style={{ flex:1 }}>
-          <LanguageBars languages={languageData} tok={tok} />
+        <ChartCard tok={tok} title="Language Distribution · all time" style={{ flex:1 }}>
+          <LanguageBars languages={languages} tok={tok} />
         </ChartCard>
       </div>
 
-      {/* Entity growth + Encounter distribution */}
       <div style={{ display:'flex', flexDirection: isNarrow ? 'column' : 'row', gap:14 }}>
         <ChartCard tok={tok} title="Entity Growth" style={{ flex:3 }}>
           <EntityGrowthChart bars={bars} tok={tok} />
         </ChartCard>
-        <ChartCard tok={tok} title="Encounter Distribution" style={{ flex:2 }}>
-          <EncounterDistribution entities={entities} tok={tok} />
+        <ChartCard tok={tok} title="Encounter Distribution · all time" style={{ flex:2 }}>
+          <EncounterDistribution buckets={encounterBuckets} tok={tok} />
         </ChartCard>
       </div>
 
-      {/* Top entities */}
-      <ChartCard tok={tok} title="Most Encountered Entities">
-        <TopEntitiesTable entities={entities} tok={tok} />
+      <ChartCard tok={tok} title="Most Encountered Entities · all time">
+        <TopEntitiesTable entities={topEntities} tok={tok} />
       </ChartCard>
 
     </div>

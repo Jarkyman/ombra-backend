@@ -10,7 +10,7 @@ use tower_http::trace::TraceLayer;
 use tracing::Span;
 use uuid::Uuid;
 
-use crate::handlers::{analytics, clusters, entities, health, query, sessions, settings, websocket};
+use crate::handlers::{analytics, clusters, devices, entities, hardware, health, logs, profile, provision, query, sessions, settings, trash, websocket};
 use crate::state::AppState;
 
 pub fn build(state: AppState) -> Router {
@@ -25,8 +25,22 @@ pub fn build(state: AppState) -> Router {
         .route("/clusters/:id", get(clusters::get))
         .route("/entities", get(entities::list))
         .route("/entities/:id", get(entities::get))
+        .route("/profile", get(profile::get))
+        .route("/profile", patch(profile::update))
+        .route("/profile/regenerate", post(profile::regenerate))
+        .route("/provision/rotate", post(provision::rotate))
+        .route("/admin/devices", get(devices::list))
+        .route("/admin/devices/:cn/revoke", post(devices::revoke))
+        .route("/admin/devices/:cn", axum::routing::delete(devices::delete))
+        .route("/clusters/trash", get(trash::list))
+        .route("/clusters/trash", axum::routing::delete(trash::empty))
+        .route("/clusters/:id/flag", post(trash::flag))
+        .route("/clusters/:id/restore", post(trash::restore))
+        .route("/clusters/:id", axum::routing::delete(trash::delete))
         .route("/settings", get(settings::get))
         .route("/settings", patch(settings::update))
+        .route("/admin/logs", get(logs::list))
+        .route("/admin/hardware", get(hardware::get))
         .route("/admin/analytics/overview", get(analytics::overview))
         .route("/admin/analytics/activity", get(analytics::activity))
         .route("/admin/analytics/entities", get(analytics::entities))
