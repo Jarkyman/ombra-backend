@@ -1,0 +1,15 @@
+[package]
+name = "ombra-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+sysinfo = "0.38"
+toml = "0.8"
+aes-gcm = "0.10"
+rand = "0.8"
+hex = "0.4"
