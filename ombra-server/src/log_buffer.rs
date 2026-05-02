@@ -2,10 +2,12 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}};
 
 use serde::Serialize;
+use tokio::sync::broadcast;
 use tracing::Subscriber;
 use tracing_subscriber::Layer;
 
 const MAX_ENTRIES: usize = 500;
+const BROADCAST_CAPACITY: usize = 256;
 
 #[derive(Serialize, Clone)]
 pub struct LogEntry {
@@ -23,13 +25,16 @@ pub struct LogBuffer(Arc<Inner>);
 struct Inner {
     entries: Mutex<VecDeque<LogEntry>>,
     counter: AtomicU64,
+    broadcast: broadcast::Sender<LogEntry>,
 }
 
 impl LogBuffer {
     pub fn new() -> Self {
+        let (broadcast, _) = broadcast::channel(BROADCAST_CAPACITY);
         Self(Arc::new(Inner {
             entries: Mutex::new(VecDeque::with_capacity(MAX_ENTRIES)),
             counter: AtomicU64::new(0),
+            broadcast,
         }))
     }
 
@@ -39,6 +44,10 @@ impl LogBuffer {
         let len = collected.len();
         let start = len.saturating_sub(limit);
         collected[start..].to_vec()
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<LogEntry> {
+        self.0.broadcast.subscribe()
     }
 }
 
@@ -148,6 +157,7 @@ impl<S: Subscriber> Layer<S> for LogBufferLayer {
         if entries.len() >= MAX_ENTRIES {
             entries.pop_front();
         }
-        entries.push_back(entry);
+        entries.push_back(entry.clone());
+        let _ = self.buffer.0.broadcast.send(entry);
     }
 }

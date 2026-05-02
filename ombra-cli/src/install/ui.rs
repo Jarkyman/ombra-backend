@@ -8,7 +8,9 @@ use ratatui::{
 
 use ombra_common::hardware::HardwareProfile;
 
-use crate::install::state::{App, Step, TaskStatus, PROFILES};
+use ombra_common::config::RemoteAccessMode;
+
+use crate::install::state::{App, Step, TaskStatus, TailscaleStatus, CONNECTION_MODES, PROFILES};
 
 const PURPLE: Color = Color::Rgb(138, 99, 210);
 const PURPLE_DIM: Color = Color::Rgb(80, 55, 130);
@@ -17,6 +19,7 @@ const DIM: Color = Color::DarkGray;
 const GREEN: Color = Color::Green;
 const YELLOW: Color = Color::Yellow;
 const RED: Color = Color::Red;
+const BLUE: Color = Color::Rgb(100, 130, 210);
 
 pub fn render(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -38,9 +41,10 @@ fn render_title_bar(f: &mut Frame, area: Rect, app: &App) {
         Step::Welcome | Step::Done => String::new(),
         Step::ModelSelect => "  Step 1 of 4  Model".to_string(),
         Step::LanguageInput => "  Step 2 of 4  Language".to_string(),
-        Step::RemoteAccessChoice | Step::RemoteTokenInput | Step::RemoteSubdomainInput => {
-            "  Step 3 of 4  Remote Access".to_string()
-        }
+        Step::ConnectionModeSelect
+        | Step::RemoteTokenInput
+        | Step::RemoteSubdomainInput
+        | Step::TailscaleCheck => "  Step 3 of 4  Connection".to_string(),
         Step::Starting
         | Step::OnboardingName
         | Step::OnboardingOccupation
@@ -72,8 +76,9 @@ fn render_hint_bar(f: &mut Frame, area: Rect, app: &App) {
         Step::Welcome => "Enter  begin",
         Step::ModelSelect => "↑↓  navigate    Enter  confirm",
         Step::LanguageInput => "Enter  confirm",
-        Step::RemoteAccessChoice => "Y  yes    N / Enter  no",
+        Step::ConnectionModeSelect => "↑↓  navigate    Enter  select",
         Step::RemoteTokenInput | Step::RemoteSubdomainInput => "Enter  confirm",
+        Step::TailscaleCheck => "Enter  continue",
         Step::Starting => "",
         Step::OnboardingName
         | Step::OnboardingOccupation
@@ -110,12 +115,12 @@ fn render_content(f: &mut Frame, area: Rect, app: &mut App) {
             "ISO 639-1 code — e.g. en, da, de, fr",
             &app.input.clone(),
         ),
-        Step::RemoteAccessChoice => render_remote_choice(f, area),
+        Step::ConnectionModeSelect => render_connection_mode_select(f, area, app),
         Step::RemoteTokenInput => render_text_input(
             f,
             area,
             "DuckDNS token",
-            "Set up remote access",
+            "Set up DuckDNS remote access",
             "Paste your DuckDNS token from duckdns.org",
             &app.input.clone(),
         ),
@@ -123,10 +128,11 @@ fn render_content(f: &mut Frame, area: Rect, app: &mut App) {
             f,
             area,
             "DuckDNS subdomain",
-            "Set up remote access",
+            "Set up DuckDNS remote access",
             "Your subdomain — e.g. my-ombra (without .duckdns.org)",
             &app.input.clone(),
         ),
+        Step::TailscaleCheck => render_tailscale_check(f, area, app),
         Step::Starting => render_starting(f, area),
         Step::OnboardingName => render_onboarding(
             f, area, app, "What is your name?",
@@ -366,9 +372,9 @@ fn render_text_input(
     );
 }
 
-fn render_remote_choice(f: &mut Frame, area: Rect) {
+fn render_connection_mode_select(f: &mut Frame, area: Rect, app: &mut App) {
     let layout = Layout::vertical([
-        Constraint::Length(3),
+        Constraint::Length(4),
         Constraint::Min(0),
     ])
     .split(area);
@@ -377,32 +383,145 @@ fn render_remote_choice(f: &mut Frame, area: Rect) {
         Paragraph::new(vec![
             Line::from(""),
             Line::from(Span::styled(
-                "  Remote access",
+                "  Connection mode",
                 Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
             )),
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled("How will devices connect to your Ombra server?", Style::default().fg(DIM)),
+            ]),
         ]),
         layout[0],
     );
 
-    let lines = vec![
-        Line::from(Span::styled(
-            "  Access Ombra from outside your home network.",
-            Style::default().fg(DIM),
-        )),
-        Line::from(Span::styled(
-            "  Uses DuckDNS (free). Requires a one-time port-forward in your router.",
-            Style::default().fg(DIM),
-        )),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  Y", Style::default().fg(GREEN).add_modifier(Modifier::BOLD)),
-            Span::styled("  Set up remote access", Style::default().fg(WHITE)),
+    let selected = app.list_state.selected().unwrap_or(0);
+    let items: Vec<ListItem> = CONNECTION_MODES
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            let is_available = entry.mode.is_some();
+            let is_selected = i == selected;
+
+            let label_style = if is_available {
+                if is_selected {
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(WHITE)
+                }
+            } else {
+                Style::default().fg(DIM)
+            };
+
+            let desc_style = if is_available {
+                Style::default().fg(DIM)
+            } else {
+                Style::default().fg(Color::Rgb(50, 50, 50))
+            };
+
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("  {:<20}", entry.label), label_style),
+                Span::styled(entry.description, desc_style),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .highlight_style(Style::default().bg(PURPLE_DIM).fg(WHITE))
+        .highlight_symbol("▶ ");
+
+    let block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(PURPLE_DIM))
+        .padding(Padding::horizontal(1));
+
+    f.render_stateful_widget(list.block(block), layout[1], &mut app.list_state);
+}
+
+fn render_tailscale_check(f: &mut Frame, area: Rect, app: &App) {
+    let layout = Layout::vertical([
+        Constraint::Length(4),
+        Constraint::Min(0),
+    ])
+    .split(area);
+
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Tailscale setup",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled("Checking Tailscale status...", Style::default().fg(DIM)),
+            ]),
         ]),
-        Line::from(vec![
-            Span::styled("  N", Style::default().fg(DIM).add_modifier(Modifier::BOLD)),
-            Span::styled("  Local network only  (you can add this later)", Style::default().fg(DIM)),
-        ]),
-    ];
+        layout[0],
+    );
+
+    let lines = match &app.tailscale_status {
+        None => vec![
+            Line::from(""),
+            Line::from(Span::styled("  Detecting...", Style::default().fg(DIM))),
+        ],
+        Some(TailscaleStatus::NotInstalled) => vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Tailscale is not installed.",
+                Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled("  Install it from:", Style::default().fg(DIM))),
+            Line::from(Span::styled(
+                "  https://tailscale.com/download",
+                Style::default().fg(BLUE),
+            )),
+            Line::from(""),
+            Line::from(Span::styled("  After installing and logging in:", Style::default().fg(DIM))),
+            Line::from(Span::styled("    sudo tailscale up", Style::default().fg(WHITE))),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Press Enter to continue anyway — you can set up Tailscale later.",
+                Style::default().fg(DIM),
+            )),
+        ],
+        Some(TailscaleStatus::NotLoggedIn) => vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Tailscale is installed but not connected.",
+                Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled("  Log in with:", Style::default().fg(DIM))),
+            Line::from(Span::styled("    sudo tailscale up", Style::default().fg(WHITE))),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Press Enter to continue anyway — you can connect Tailscale later.",
+                Style::default().fg(DIM),
+            )),
+        ],
+        Some(TailscaleStatus::Connected { ip }) => vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ✓  Tailscale connected  ", Style::default().fg(GREEN).add_modifier(Modifier::BOLD)),
+                Span::styled(ip, Style::default().fg(GREEN)),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Your Ombra server will be reachable at this IP via Tailscale.",
+                Style::default().fg(DIM),
+            )),
+            Line::from(Span::styled(
+                "  The admin panel is accessible from any Tailscale device.",
+                Style::default().fg(DIM),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Press Enter to continue →",
+                Style::default().fg(PURPLE),
+            )),
+        ],
+    };
 
     f.render_widget(Paragraph::new(lines), layout[1]);
 }
@@ -674,10 +793,17 @@ fn render_done(f: &mut Frame, area: Rect, app: &App) {
         "tail -f ombra.log"
     };
 
-    let remote_line = if app.remote_access && !app.ddns_subdomain.is_empty() {
-        format!("  Remote:   https://{}.duckdns.org:8080", app.ddns_subdomain)
-    } else {
-        "  Remote:   not configured  (run install again to enable)".to_string()
+    let remote_line = match &app.connection_mode {
+        RemoteAccessMode::DuckDns if !app.ddns_subdomain.is_empty() => {
+            format!("  Remote:   https://{}.duckdns.org:8080", app.ddns_subdomain)
+        }
+        RemoteAccessMode::Tailscale => match &app.tailscale_status {
+            Some(TailscaleStatus::Connected { ip }) => {
+                format!("  Tailscale: https://{}:8080", ip)
+            }
+            _ => "  Tailscale: not connected  (run: sudo tailscale up)".to_string(),
+        },
+        _ => "  Remote:   not configured  (run install again to enable)".to_string(),
     };
 
     let lines = vec![

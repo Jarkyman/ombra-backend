@@ -1,6 +1,11 @@
+use std::convert::Infallible;
+use std::time::Duration;
+
 use axum::{Json, response::IntoResponse};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use serde::Serialize;
 use sysinfo::{CpuRefreshKind, Disks, MemoryRefreshKind, RefreshKind, System};
+use tokio_stream::{Stream, StreamExt, wrappers::IntervalStream};
 
 #[derive(Serialize)]
 pub struct DiskMetric {
@@ -19,14 +24,14 @@ pub struct HardwareResponse {
     pub disks: Vec<DiskMetric>,
 }
 
-pub async fn get() -> impl IntoResponse {
+async fn collect() -> HardwareResponse {
     let mut sys = System::new_with_specifics(
         RefreshKind::new()
             .with_cpu(CpuRefreshKind::everything())
             .with_memory(MemoryRefreshKind::everything()),
     );
 
-    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    tokio::time::sleep(Duration::from_millis(120)).await;
     sys.refresh_specifics(
         RefreshKind::new()
             .with_cpu(CpuRefreshKind::everything())
@@ -51,12 +56,25 @@ pub async fn get() -> impl IntoResponse {
         })
         .collect();
 
-    Json(HardwareResponse {
+    HardwareResponse {
         cores,
         cpu_freq_mhz,
         ram_used_bytes,
         ram_total_bytes,
         disks,
-    })
-    .into_response()
+    }
+}
+
+pub async fn get() -> impl IntoResponse {
+    Json(collect().await).into_response()
+}
+
+pub async fn stream() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let interval = tokio::time::interval(Duration::from_secs(2));
+    let s = IntervalStream::new(interval).then(|_| async {
+        let hw = collect().await;
+        let json = serde_json::to_string(&hw).unwrap_or_default();
+        Ok::<_, Infallible>(Event::default().data(json))
+    });
+    Sse::new(s).keep_alive(KeepAlive::default())
 }

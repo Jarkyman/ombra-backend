@@ -1,4 +1,8 @@
 pub mod analytics;
+pub mod cert_status;
+pub mod le_renew;
+pub mod connection_status;
+pub mod danger;
 pub mod devices;
 pub mod provision;
 pub mod clusters;

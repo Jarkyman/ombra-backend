@@ -1,8 +1,10 @@
+mod cert_monitor;
 mod db;
 mod events;
 mod handlers;
 mod ingestion;
 mod log_buffer;
+mod middleware;
 mod network;
 mod onboarding;
 mod provision;
@@ -52,7 +54,7 @@ async fn main() {
         .with(LogBufferLayer::new(log_buffer.clone()))
         .init();
 
-    let config = AppConfig::load(CONFIG_PATH.as_ref()).unwrap_or_else(|_| {
+    let mut config = AppConfig::load(CONFIG_PATH.as_ref()).unwrap_or_else(|_| {
         let default = AppConfig::default();
         default
             .save(CONFIG_PATH.as_ref())
@@ -117,6 +119,22 @@ async fn main() {
         encryption_key,
     ));
 
+    let acme_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()
+        .expect("failed to build ACME HTTP client");
+
+    if matches!(config.remote_access_mode, ombra_common::config::RemoteAccessMode::DuckDns) {
+        match network::prepare_le_cert(&mut config, &acme_client).await {
+            Ok(()) => info!(component = "acme", "LE certificate ready"),
+            Err(e) => tracing::warn!(component = "acme", %e, "LE cert preparation failed — using self-signed cert"),
+        }
+    }
+
+    let mtls_config = tls::build_mtls_server_config(&config)
+        .expect("failed to build mTLS config — run scripts/generate_dev_certs.sh first");
+    let rustls_config = RustlsConfig::from_config(mtls_config);
+
     let app_state = AppState {
         database_pool,
         ingestion_pipeline,
@@ -129,8 +147,14 @@ async fn main() {
         user_profile_summary: Arc::new(RwLock::new(user_profile_summary)),
         event_broadcast,
         log_buffer,
+        tls_config: rustls_config.clone(),
     };
 
+    info!(
+        component = "network",
+        mode = ?config.remote_access_mode,
+        "remote access mode"
+    );
     network::start(&config).await;
 
     let provision_state = provision::ProvisionState::new(
@@ -154,18 +178,22 @@ async fn main() {
         .expect("provision server failed");
     });
 
-    let mtls_config = tls::build_mtls_server_config(&config)
-        .expect("failed to build mTLS config — run scripts/generate_dev_certs.sh first");
-
-    let rustls_config = RustlsConfig::from_config(mtls_config);
+    tokio::spawn(cert_monitor::run(Arc::clone(&app_state.config)));
+    tokio::spawn(cert_monitor::run_le_renewal_loop(
+        Arc::clone(&app_state.config),
+        rustls_config.clone(),
+        acme_client,
+    ));
     let address = SocketAddr::from(([0, 0, 0, 0], config.server_port));
 
     info!(component = "ombra-server", %address, "starting with mTLS");
 
     register_client_cert(&app_state.database_pool, &config).await;
 
+    let admin_dir = config.admin_dir.clone();
+
     axum_server::bind_rustls(address, rustls_config)
-        .serve(router::build(app_state).into_make_service())
+        .serve(router::build(app_state, admin_dir).into_make_service_with_connect_info::<SocketAddr>())
         .await
         .expect("server failed");
 }

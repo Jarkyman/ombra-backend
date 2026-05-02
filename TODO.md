@@ -11,7 +11,7 @@
 - DONE {M} [BACKEND] (H): SQLx with SQLite — migrations folder + initial schema (transcripts, sessions)
 - DONE {M} [BACKEND, Security] (H): AES-256-GCM encryption layer for SQLite at rest (field-level on transcript content)
 - DONE {M} [BACKEND, Security] (H): mTLS with `rustls` — client certificate validation for iPhone + hardware device
-- TODO {S} [BACKEND, Infrastructure] (M): Let's Encrypt cert via DNS-01 challenge — proves domain ownership via DNS TXT record, no open ports required. Works with both DuckDNS and a custom domain. Replaces self-signed dev certs for production.
+- TODO {S} [BACKEND, Infrastructure] (M): Let's Encrypt cert via DNS-01 challenge — see "Remote Access Modes → Backend — DuckDNS mode" section for detailed breakdown.
 - DONE {M} [BACKEND] (H): WebSocket endpoint for receiving transcripts from the mobile app
 - DONE {M} [BACKEND] (H): Transcript ingestion — only discard technically empty transcripts ([BLANK_AUDIO], whitespace-only); store everything else
 - DONE {M} [BACKEND] (H): `detected_language` (ISO 639-1) and `raw_whisper_text` fields on transcripts table (migration)
@@ -160,6 +160,8 @@ as the AI learns more — but it needs a foundation to start from.
 - DONE {C} [BACKEND, UI] (L): In-app QR code generation — `POST /provision/rotate` (mTLS-protected): generates new provision token, writes to disk (mode 0o600), returns `{ host, port, provision_port, token, ca_fp }` QR payload for the app to scan
 - TODO {C} [Infrastructure] (L): Register `get.ombra.io` and set up redirect to raw GitHub install.sh — so the install command becomes `curl -sSf https://get.ombra.io | bash`
 - TODO {W} [Infrastructure] (L): Ombra Relay — minimal relay server for connection routing only (not data). Necessary for users behind CGNAT where UPnP and port forwarding are physically impossible. Deliberate infrastructure investment for when the product goes to market.
+- TODO {C} [BACKEND, Security, Infrastructure] (L): Investigate moving admin panel to a dedicated local-only port (e.g. 8083) that is never included in UPnP mapping — same pattern as the provision server (port 8081). This would enforce LAN-only at the network layer instead of application layer, making the `lan_only` middleware redundant. Trade-off: requires a second Axum listener and splitting admin routes/static files off the main router.
+- TODO {M} [Infrastructure, CLI, UI] (H): Remote access mode system — setup wizard lets users choose how Ombra is reachable. Active: Local only, DuckDNS, Tailscale. Grayed with "(coming soon)": OmbraDNS, ZeroTier, Cloudflare Tunnel, Remote.It, ngrok, packetriot. See "Remote Access Modes" section for full breakdown.
 
 ### Certificate Auto-Renewal
 
@@ -174,6 +176,53 @@ while the old one is still valid — the app rotates silently. The user never th
 - TODO {S} [CLI, Security] (M): `ombra renew-certs` command — manually triggers re-generation of all client certs and prints instructions for re-provisioning devices that cannot auto-renew. Useful as a fallback if auto-renewal fails.
 - TODO {S} [BACKEND, Security] (M): Renewed cert written to disk atomically — generate to temp file, then `rename()` into place. Avoids incomplete cert file window on server crash.
 - TODO {S} [BACKEND, Security] (M): Grace period overlap — when renewed cert is issued, server accepts both old and new cert until old one expires. Prevents race where app has new cert but server hasn't persisted it yet.
+
+## Remote Access Modes
+
+Design decision: users choose how their Ombra server is reachable from outside the home network at setup time.
+All modes keep mTLS — transport security is always on.
+The admin panel is always LAN-only, regardless of mode.
+
+Active in wizard: **Local only**, **DuckDNS**, **Tailscale**.
+Grayed with "(coming soon)": OmbraDNS, ZeroTier, Cloudflare Tunnel, Remote.It, ngrok, packetriot.
+
+### Config
+
+- DONE {M} [BACKEND, Infrastructure] (H): `RemoteAccessMode` enum in `ombra-common` — variants: `LocalOnly | DuckDns | Tailscale | ZeroTier | CloudflareTunnel | RemoteIt | Ngrok | Packetriot | OmbraDns`. Add `remote_access_mode: RemoteAccessMode` field to `AppConfig` (default: `LocalOnly`, serde-defaulted). Existing `ddns: Option<DdnsConfig>` stays as DuckDNS sub-config.
+
+### Setup Wizard (ombra install)
+
+- DONE {M} [CLI, UI] (H): Connection mode picker — `Step::ConnectionModeSelect` replaces old Y/N RemoteAccessChoice. 9-entry list (↑↓ navigation), first 3 selectable, 6 grayed with "(coming soon)". Navigation skips coming-soon entries.
+- DONE {M} [CLI] (H): Local only setup flow — selecting LocalOnly goes directly to Starting; writes `remote_access_mode = "local_only"` to config.
+- DONE {M} [CLI] (H): DuckDNS setup flow — selecting DuckDNS goes to token input → subdomain input → Starting; writes `remote_access_mode = "duck_dns"` + `[ddns]` section to config.
+- DONE {M} [CLI] (H): Tailscale setup flow — `Step::TailscaleCheck` runs `detect_tailscale_status()` once on entry (checks `tailscale --version` + `tailscale ip -4`). Shows: not installed (install URL + instructions), not logged in (`sudo tailscale up`), or connected (green IP). Enter proceeds to Starting regardless. Writes `remote_access_mode = "tailscale"` to config.
+- TODO {S} [CLI] (M): DuckDNS token validation — validate token+subdomain by calling DuckDNS update API and checking for `OK` response before accepting. Re-prompt on failure.
+
+### Backend — all modes
+
+- DONE {M} [BACKEND] (H): `GET /admin/connection-status` — returns `{ mode, lan_ip, server_port, tailscale_ip?, duckdns_hostname?, duckdns_token_set }`. Tailscale IP detected on-demand via `tailscale ip -4` subprocess.
+- DONE {S} [BACKEND] (M): Log current connection mode at startup under `component = "network"`.
+
+### Backend — Tailscale mode
+
+- DONE {M} [BACKEND, Security] (H): Extend `require_lan` middleware — when `remote_access_mode = "tailscale"`, also allow `100.64.0.0/10` (Tailscale CGNAT range). Middleware now reads mode from `AppState` via `from_fn_with_state`. All existing LAN tests pass + new `tailscale_cgnat_range` test added.
+- DONE {S} [BACKEND] (M): Tailscale IP detection — `detect_tailscale_ip()` in `connection_status` handler runs `tailscale ip -4` via `spawn_blocking`, returns `None` if Tailscale not running.
+
+### Backend — DuckDNS mode (Let's Encrypt DNS-01)
+
+- TODO {M} [BACKEND, Infrastructure] (H): Let's Encrypt DNS-01 cert issuance — add `instant-acme = "0.7"` to `ombra-server/Cargo.toml`. On first boot in DuckDNS mode with no LE cert on disk: create ACME account with Let's Encrypt production, order cert for `{subdomain}.duckdns.org`, receive DNS-01 challenge value, write `_acme-challenge.{subdomain}` TXT record via DuckDNS API (`?txt={value}`), poll for DNS propagation (5s backoff, up to 3 min), notify ACME to validate, download cert chain + key, write to `certs/le-server.crt` and `certs/le-server.key` (mode 0o600), hot-reload TLS config via `RustlsConfig::reload_from_config`.
+- TODO {M} [BACKEND, Infrastructure] (H): LE cert auto-renewal — extend `cert_monitor` background task: when mode is `duck_dns` and LE cert expires within 30 days, re-run DNS-01 flow automatically. Hot-reload TLS on success. On failure: log error, retry after 24h, surface error in `/admin/connection-status`.
+- TODO {S} [BACKEND] (M): ACME account key persistence — store ACME account private key at `certs/le-account.key` (mode 0o600). Reuse on renewals to avoid re-registering with Let's Encrypt (rate limit protection).
+- TODO {S} [BACKEND] (M): DuckDNS TXT record cleanup — after DNS-01 validation (success or failure), clear the TXT record via DuckDNS API (`?txt=` empty) to keep DNS tidy.
+- TODO {S} [BACKEND, Security] (M): Relax `require_lan` for non-admin routes in DuckDNS mode — mobile app connects from public IPs. Admin sub-router stays LAN-only. After first successful LE cert issuance, update `tls_server_cert_path` and `tls_server_key_path` in `ombra.toml` to point at `certs/le-*.{crt,key}`.
+
+### Admin Panel — Connection Status
+
+- DONE {M} [UI, BACKEND] (H): Replace static DDNS panel in Config with live `ConnectionPanel` — fetches `GET /admin/connection-status`. Shows mode badge + LAN IP + server port + Tailscale IP (when Tailscale mode) + DuckDNS hostname + token status (when DuckDNS mode).
+- TODO {S} [UI] (M): DuckDNS card rows — add last IP update timestamp, cert type badge (Let's Encrypt), cert expiry badge (reuses `certBadge()` from TlsPanel), "Force renew" button (`POST /admin/renew-le-cert`). Needs LE cert issuance backend first.
+- TODO {S} [UI] (M): Tailscale card rows — add MagicDNS hostname if available, reachability status. Needs `tailscale status --json` parsing in backend.
+
+---
 
 ## Testing
 
@@ -267,9 +316,10 @@ Web UI served by `ombra-server`, accessible at `ombra.local/admin` or `<LAN-IP>/
 
 ### Foundation
 
-- TODO {S} [BACKEND, UI] (M): Serve static files from `ombra-server/admin/` — Axum `ServeDir` on the `/admin` route. Files are built and ready; just need to be wired into the router.
+- DONE {S} [BACKEND, UI] (M): Serve static files from `ombra-server/admin/` — Axum `ServeDir` on the `/admin` route, path configurable via `AppConfig.admin_dir` (default: `admin/`)
 - DONE {M} [BACKEND, Security] (H): Admin routes protected by mTLS (same as all other routes — no additional auth needed)
-- TODO {S} [BACKEND, Security] (M): Admin routes only accessible from loopback/LAN interfaces — middleware rejects requests from public IP ranges
+- DONE {S} [BACKEND, Security] (M): Admin routes only accessible from loopback/LAN interfaces — `middleware/lan_only.rs` checks remote IP; handles IPv4, IPv6, and IPv4-mapped IPv6; rejects with 403 from public ranges
+- TODO {C} [BACKEND, Security, UI] (L): Admin panel login page — mTLS already authenticates devices, but a browser login adds a human-facing auth layer for anyone on the LAN. Options: Linux PAM (authenticate against the system user running ombra via the `pam` crate), or a simple hashed password stored in `ombra.toml` with a session cookie. PAM is more natural on Linux and requires no separate password management.
 - TODO {S} [UI] (M): Skeleton loading states — pulsing placeholder cards for all data-fetching sections. CSS `@keyframes shimmer` with a single reusable `.skeleton` class.
 - DONE {S} [UI] (M): CSS design tokens — `tokens.js` with OMBRA_LIGHT / OMBRA_DARK palettes; `prefers-color-scheme` support with manual toggle
 - DONE {S} [UI] (M): Base layout — left sidebar nav (collapsible), main content area, top header bar, Ombra enso logo at top of sidebar
@@ -289,7 +339,7 @@ Web UI served by `ombra-server`, accessible at `ombra.local/admin` or `<LAN-IP>/
 
 ### Logs
 
-- TODO {S} [BACKEND] (M): SSE endpoint `GET /admin/logs/stream` — stream JSONL log entries as Server-Sent Events (currently polling `GET /admin/logs` every 2s)
+- DONE {S} [BACKEND] (M): SSE endpoint `GET /admin/logs/stream` — stream JSONL log entries as Server-Sent Events (currently polling `GET /admin/logs` every 2s)
 - DONE {M} [UI] (H): Auto-scrolling log panel — JSONL feed with color-coded syntax (JetBrains Mono); `component` field in accent, `entropy_level` colored by severity
 - DONE {S} [UI] (M): Log level filter chips — All / Error / Warn / Info / Debug
 - DONE {S} [UI] (M): Component filter — filter by `component` field (ingestion, ai, websocket, etc.)
@@ -307,8 +357,8 @@ Web UI served by `ombra-server`, accessible at `ombra.local/admin` or `<LAN-IP>/
 
 ### Entities
 
-- TODO {W} [BACKEND] (L): `GET /entities/graph` — return nodes (entities) and edges (relationships) as JSON. Deferred — no entity relationships endpoint exists yet.
-- TODO {W} [UI] (L): Force-directed graph — Canvas 2D visualization of entity relationship network. Deferred until relationship graph endpoint exists.
+- DONE {C} [BACKEND] (L): `GET /entities/graph` — return nodes (entities) and edges (relationships) as JSON, deduplicated by canonical direction, capped at 200 nodes.
+- DONE {C} [UI] (L): Force-directed graph — Canvas 2D visualization of entity relationship network. Tab switcher (List / Graph) in entities section; shared selected-entity state with detail panel.
 - DONE {S} [UI] (M): Entity detail panel — click entity to show: name, type, encounter_count, context_tags, profile summary, recent clusters
 - DONE {S} [UI] (M): Entity table view — sortable by encounter_count, last_seen, entity_type
 - DONE {S} [BACKEND] (M): Entity list — `GET /entities` paginated
@@ -321,7 +371,7 @@ Web UI served by `ombra-server`, accessible at `ombra.local/admin` or `<LAN-IP>/
 - DONE {S} [UI] (M): DDNS status card — current hostname, last updated timestamp, enable/disable toggle
 - DONE {S} [UI] (M): mTLS certificate status — expiry dates for CA cert and server cert, days remaining (warning color < 30 days)
 - DONE {S} [UI] (M): Save button sends PATCH, toast confirms success
-- TODO {S} [UI, BACKEND] (M): Danger zone — factory reset panel at the bottom of Config. Requires typing "RESET" to unlock. `POST /admin/reset` deletes all clusters, entities, profiles, devices, and Qdrant data, then restarts server into initial setup state.
+- DONE {S} [UI, BACKEND] (M): Danger zone — two actions: purge (clusters/transcripts/embeddings, entities kept) and factory reset (all data). Type-to-confirm modal with loading/success/error states. `POST /admin/purge` and `POST /admin/factory-reset`.
 
 ### Devices
 
@@ -349,7 +399,7 @@ Web UI served by `ombra-server`, accessible at `ombra.local/admin` or `<LAN-IP>/
 ### Hardware
 
 - DONE {M} [BACKEND] (H): `GET /admin/hardware` — snapshot of CPU, RAM, disk, temperatures, network via `sysinfo` crate (pure Rust, cross-platform)
-- TODO {C} [BACKEND] (L): SSE endpoint `GET /admin/hardware/stream` — push hardware snapshot every 2s as Server-Sent Events (currently polling every 2s)
+- DONE {C} [BACKEND] (L): SSE endpoint `GET /admin/hardware/stream` — push hardware snapshot every 2s as Server-Sent Events (currently polling every 2s)
 - DONE {S} [UI] (M): CPU panel — overall usage %, per-core breakdown as mini progress bars, model name, logical core and thread count
 - DONE {S} [UI] (M): RAM panel — total, used, available, swap. Horizontal progress bar in accent
 - DONE {S} [UI] (M): Disk panel — per mount point: device name, mount path, total/used/free, filesystem type

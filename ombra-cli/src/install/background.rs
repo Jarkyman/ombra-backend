@@ -6,10 +6,10 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
 
-use ombra_common::config::{AppConfig, DdnsConfig, DdnsProvider};
+use ombra_common::config::{AppConfig, DdnsConfig, DdnsProvider, RemoteAccessMode};
 use ombra_common::hardware::HardwareProfile;
 
-use crate::install::state::{BackgroundEvent, OnboardingAnswers};
+use crate::install::state::{BackgroundEvent, OnboardingAnswers, TailscaleStatus};
 
 fn model_expected_bytes(profile: &HardwareProfile) -> u64 {
     match profile {
@@ -153,10 +153,39 @@ fn run_server_build(tx: Sender<BackgroundEvent>, install_dir: PathBuf) {
     }
 }
 
+pub fn detect_tailscale_status() -> TailscaleStatus {
+    let installed = Command::new("tailscale")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !installed {
+        return TailscaleStatus::NotInstalled;
+    }
+
+    let out = Command::new("tailscale")
+        .args(["ip", "-4"])
+        .output();
+
+    match out {
+        Ok(o) if o.status.success() => {
+            let ip = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if ip.is_empty() {
+                TailscaleStatus::NotLoggedIn
+            } else {
+                TailscaleStatus::Connected { ip }
+            }
+        }
+        _ => TailscaleStatus::NotLoggedIn,
+    }
+}
+
 pub fn write_config(
     install_dir: &Path,
     profile: HardwareProfile,
     language: String,
+    connection_mode: RemoteAccessMode,
     ddns_token: &str,
     ddns_subdomain: &str,
 ) -> Result<(), String> {
@@ -165,7 +194,10 @@ pub fn write_config(
         return Ok(());
     }
 
-    let ddns = if !ddns_token.is_empty() && !ddns_subdomain.is_empty() {
+    let ddns = if matches!(connection_mode, RemoteAccessMode::DuckDns)
+        && !ddns_token.is_empty()
+        && !ddns_subdomain.is_empty()
+    {
         Some(DdnsConfig {
             provider: DdnsProvider::DuckDns,
             token: ddns_token.to_string(),
@@ -178,6 +210,7 @@ pub fn write_config(
     let config = AppConfig {
         hardware_profile: profile,
         response_language: language,
+        remote_access_mode: connection_mode,
         ddns,
         ..AppConfig::default()
     };

@@ -260,66 +260,293 @@ function GeneralSettingsPanel({ tok }) {
   );
 }
 
+function certBadge(info, tok) {
+  if (!info) return null;
+  if (info.status === 'unreadable') return { text: '?', color: tok.textMuted, bg: tok.surfaceElevated };
+  if (info.status === 'expired')    return { text: 'Expired', color: tok.recording, bg: tok.recordingSubtle };
+  if (info.status === 'critical')   return { text: `${info.days_remaining}d`, color: tok.recording, bg: tok.recordingSubtle };
+  if (info.status === 'expiring_soon') return { text: `${info.days_remaining}d`, color: tok.warning, bg: tok.warningSubtle };
+  return { text: `${info.days_remaining}d`, color: tok.success, bg: tok.successSubtle };
+}
+
 function TlsPanel({ tok }) {
-  const rows = [
-    { label: 'Server certificate', value: 'certs/server.crt',    badge: { text: 'Valid', color: tok.success, bg: tok.successSubtle } },
-    { label: 'Server key',         value: 'certs/server.key',    badge: null },
-    { label: 'Client CA cert',     value: 'certs/client-ca.crt', badge: { text: 'Valid', color: tok.success, bg: tok.successSubtle } },
-    { label: 'Client cert',        value: 'certs/client.crt',    badge: { text: 'Valid', color: tok.success, bg: tok.successSubtle } },
-    { label: 'Client key',         value: 'certs/client.key',    badge: null },
-  ];
+  const [certData, setCertData] = useState(null);
+  const [renewing, setRenewing] = useState(false);
+  const [renewResult, setRenewResult] = useState(null); // null | 'ok' | 'error' | 'no_ca'
+
+  useEffect(() => {
+    fetch('/admin/cert-status')
+      .then(r => r.json())
+      .then(setCertData)
+      .catch(() => {});
+  }, []);
+
+  const handleRenew = async () => {
+    setRenewing(true);
+    setRenewResult(null);
+    try {
+      const r = await fetch('/admin/renew-server-cert', { method: 'POST' });
+      if (r.status === 422) {
+        setRenewResult('no_ca');
+      } else if (!r.ok) {
+        setRenewResult('error');
+      } else {
+        setRenewResult('ok');
+        const fresh = await fetch('/admin/cert-status').then(r => r.json());
+        setCertData(fresh);
+      }
+    } catch {
+      setRenewResult('error');
+    } finally {
+      setRenewing(false);
+    }
+  };
+
+  const renewBtn = (
+    <button
+      onClick={handleRenew}
+      disabled={renewing}
+      style={{
+        fontFamily: SANS, fontSize: 11, fontWeight: 500,
+        color: tok.accent, background: 'transparent',
+        border: `1px solid ${tok.accentBorder}`, borderRadius: 8,
+        padding: '5px 12px', cursor: renewing ? 'default' : 'pointer',
+        opacity: renewing ? 0.6 : 1, transition: 'opacity 120ms',
+      }}
+    >
+      {renewing ? 'Renewing…' : 'Renew server cert'}
+    </button>
+  );
+
+  const certRows = certData ? [
+    { label: 'Server certificate', info: certData.server_cert },
+    { label: 'Client CA cert',     info: certData.client_ca   },
+    { label: 'Client cert',        info: certData.client_cert },
+  ] : [];
 
   return (
     <CPanel tok={tok} style={{ flex: 1, minWidth: 0 }}>
-      <CPanelTitle tok={tok}>TLS · mTLS</CPanelTitle>
-      {rows.map((r, i) => (
-        <KVRow key={r.label} tok={tok} label={r.label} value={r.value} badge={r.badge} last={i === rows.length - 1} />
+      <CPanelTitle tok={tok} action={renewBtn}>TLS · mTLS</CPanelTitle>
+
+      {!certData && (
+        <div style={{ fontFamily: MONO, fontSize: 11, color: tok.textMuted, padding: '16px 0', textAlign: 'center' }}>
+          Loading…
+        </div>
+      )}
+
+      {certRows.map((r, i) => (
+        <KVRow
+          key={r.label}
+          tok={tok}
+          label={r.label}
+          value={r.info.path}
+          badge={certBadge(r.info, tok)}
+          last={i === certRows.length - 1}
+        />
       ))}
-      <FileManagedNote tok={tok} />
+
+      {renewResult && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          marginTop: 12, padding: '7px 11px',
+          background: renewResult === 'ok' ? tok.successSubtle : tok.recordingSubtle,
+          border: `1px solid ${renewResult === 'ok' ? tok.success : tok.recording}44`,
+          borderRadius: 9,
+        }}>
+          <Icon
+            name={renewResult === 'ok' ? 'check' : 'x'}
+            size={13}
+            color={renewResult === 'ok' ? tok.success : tok.recording}
+            strokeWidth={2.5}
+          />
+          <span style={{ fontFamily: SANS, fontSize: 11, color: tok.textMuted }}>
+            {renewResult === 'ok'    && 'Server certificate renewed — TLS hot-reloaded.'}
+            {renewResult === 'no_ca' && 'CA private key (certs/ca.key) not found. Run generate_dev_certs.sh first.'}
+            {renewResult === 'error' && 'Renewal failed. Check server logs for details.'}
+          </span>
+        </div>
+      )}
+
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 7, marginTop: 14,
+        padding: '7px 11px', background: tok.accentSubtle,
+        border: `1px solid ${tok.accentBorder}`, borderRadius: 9,
+      }}>
+        <Icon name="shield" size={13} color={tok.accent} />
+        <span style={{ fontFamily: SANS, fontSize: 11, color: tok.textMuted }}>
+          Cert paths configured in <span style={{ fontFamily: MONO, fontSize: 10.5 }}>config.toml</span> · badge shows days until expiry
+        </span>
+      </div>
     </CPanel>
   );
 }
 
-function DdnsPanel({ tok }) {
+function connectionModeBadge(mode, tok) {
+  switch (mode) {
+    case 'local_only':        return { text: 'Local only',  color: tok.textSecondary, bg: tok.surfaceElevated };
+    case 'tailscale':         return { text: 'Tailscale',   color: '#6875f5',         bg: '#6875f520'         };
+    case 'duck_dns':          return { text: 'DuckDNS',     color: '#f59e0b',         bg: '#f59e0b20'         };
+    case 'ombra_dns':         return { text: 'OmbraDNS',    color: tok.accent,        bg: tok.accentSubtle    };
+    default:                  return { text: mode,          color: tok.textMuted,      bg: tok.surfaceElevated };
+  }
+}
+
+function leCertBadge(days, tok) {
+  if (days === null || days === undefined) return null;
+  if (days < 0)  return { text: 'Expired',        color: tok.recording, bg: tok.recordingSubtle };
+  if (days < 7)  return { text: `${days}d`,        color: tok.recording, bg: tok.recordingSubtle };
+  if (days < 30) return { text: `${days}d`,        color: tok.warning,   bg: tok.warningSubtle   };
+  return           { text: `${days}d`,        color: tok.success,  bg: tok.successSubtle   };
+}
+
+function ConnectionPanel({ tok }) {
+  const [data, setData] = useState(null);
+  const [renewing, setRenewing] = useState(false);
+  const [renewResult, setRenewResult] = useState(null); // null | 'ok' | 'error'
+
+  const reload = () => {
+    fetch('/admin/connection-status')
+      .then(r => r.json())
+      .then(setData)
+      .catch(() => {});
+  };
+
+  useEffect(() => { reload(); }, []);
+
+  const handleForceRenew = async () => {
+    setRenewing(true);
+    setRenewResult(null);
+    try {
+      const r = await fetch('/admin/le/renew', { method: 'POST' });
+      if (!r.ok) {
+        setRenewResult('error');
+      } else {
+        setRenewResult('ok');
+        setTimeout(reload, 5000);
+      }
+    } catch {
+      setRenewResult('error');
+    } finally {
+      setRenewing(false);
+    }
+  };
+
+  if (!data) {
+    return (
+      <CPanel tok={tok} style={{ flex: 1, minWidth: 0 }}>
+        <CPanelTitle tok={tok}>Connection</CPanelTitle>
+        <div style={{ fontFamily: MONO, fontSize: 11, color: tok.textMuted, padding: '16px 0', textAlign: 'center' }}>Loading…</div>
+      </CPanel>
+    );
+  }
+
+  const isDuckDns = data.mode === 'duck_dns';
+  const modeBadge = connectionModeBadge(data.mode, tok);
+
+  const renewBtn = isDuckDns ? (
+    <button
+      onClick={handleForceRenew}
+      disabled={renewing}
+      style={{
+        fontFamily: SANS, fontSize: 11, fontWeight: 500,
+        color: tok.accent, background: 'transparent',
+        border: `1px solid ${tok.accentBorder}`, borderRadius: 8,
+        padding: '5px 12px', cursor: renewing ? 'default' : 'pointer',
+        opacity: renewing ? 0.6 : 1, transition: 'opacity 120ms',
+      }}
+    >
+      {renewing ? 'Renewing…' : 'Renew LE cert'}
+    </button>
+  ) : null;
+
   const rows = [
-    { label: 'Status',    value: 'Not configured', dim: true },
-    { label: 'Provider',  value: '—',              dim: true },
-    { label: 'Subdomain', value: '—',              dim: true },
-    { label: 'Hostname',  value: '—',              dim: true, last: true },
+    { label: 'Mode',        value: data.mode.replace(/_/g, ' '), badge: modeBadge },
+    { label: 'LAN IP',      value: data.lan_ip   || '—' },
+    { label: 'Server port', value: String(data.server_port) },
+    ...(data.tailscale_ip
+      ? [{ label: 'Tailscale IP', value: data.tailscale_ip }]
+      : []),
+    ...(isDuckDns && data.duckdns_hostname
+      ? [
+          { label: 'DuckDNS hostname', value: data.duckdns_hostname },
+          { label: 'Token set',        value: data.duckdns_token_set ? 'Yes' : 'No' },
+          {
+            label: 'LE cert',
+            value: data.le_cert_days_remaining != null ? `${data.le_cert_days_remaining}d remaining` : 'Not issued',
+            badge: leCertBadge(data.le_cert_days_remaining, tok),
+          },
+        ]
+      : []),
   ];
 
   return (
     <CPanel tok={tok} style={{ flex: 1, minWidth: 0 }}>
-      <CPanelTitle tok={tok}>DDNS</CPanelTitle>
+      <CPanelTitle tok={tok} action={renewBtn}>Connection</CPanelTitle>
       {rows.map((r, i) => (
-        <KVRow key={r.label} tok={tok} label={r.label} value={r.value} dim={r.dim} last={r.last} />
+        <KVRow
+          key={r.label}
+          tok={tok}
+          label={r.label}
+          value={r.value}
+          badge={r.badge}
+          last={i === rows.length - 1}
+        />
       ))}
+
+      {renewResult && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          marginTop: 12, padding: '7px 11px',
+          background: renewResult === 'ok' ? tok.successSubtle : tok.recordingSubtle,
+          border: `1px solid ${renewResult === 'ok' ? tok.success : tok.recording}44`,
+          borderRadius: 9,
+        }}>
+          <Icon
+            name={renewResult === 'ok' ? 'check' : 'x'}
+            size={13}
+            color={renewResult === 'ok' ? tok.success : tok.recording}
+            strokeWidth={2.5}
+          />
+          <span style={{ fontFamily: SANS, fontSize: 11, color: tok.textMuted }}>
+            {renewResult === 'ok'
+              ? 'Renewal started — takes ~2 min. Badge updates automatically.'
+              : 'Renewal request failed. Check server logs.'}
+          </span>
+        </div>
+      )}
+
       <FileManagedNote tok={tok} />
     </CPanel>
   );
 }
 
 function DangerModal({ tok, action, onClose }) {
-  const [typed, setTyped] = useState('');
+  const [typed,  setTyped]  = useState('');
+  const [status, setStatus] = useState(null); // null | 'running' | 'done' | 'error'
   const inputRef = React.useRef(null);
-  const matches = typed.toLowerCase() === action.keyword;
+  const matches  = typed.toLowerCase() === action.keyword;
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape' && status !== 'running') onClose(); };
     document.addEventListener('keydown', onKey);
     setTimeout(() => inputRef.current && inputRef.current.focus(), 60);
     return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  }, [status]);
 
-  const handleConfirm = () => {
-    if (!matches) return;
-    onClose();
-    // TODO: call action.onConfirm() once backend endpoint exists
+  const handleConfirm = async () => {
+    if (!matches || status === 'running') return;
+    setStatus('running');
+    try {
+      await action.onConfirm();
+      setStatus('done');
+    } catch {
+      setStatus('error');
+    }
   };
 
   return ReactDOM.createPortal(
     <div
-      onClick={onClose}
+      onClick={status === 'running' ? undefined : onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 9000,
         background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)',
@@ -342,71 +569,135 @@ function DangerModal({ tok, action, onClose }) {
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
           <div style={{
             width: 40, height: 40, borderRadius: 12, flexShrink: 0,
-            background: tok.recordingSubtle, border: `1px solid ${tok.recording}44`,
+            background: status === 'done'
+              ? tok.successSubtle
+              : status === 'error'
+                ? tok.warningSubtle
+                : tok.recordingSubtle,
+            border: `1px solid ${status === 'done' ? tok.success : status === 'error' ? tok.warning : tok.recording}44`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <Icon name="trash" size={18} color={tok.recording} strokeWidth={1.5} />
+            <Icon
+              name={status === 'done' ? 'check' : status === 'error' ? 'x' : 'trash'}
+              size={18}
+              color={status === 'done' ? tok.success : status === 'error' ? tok.warning : tok.recording}
+              strokeWidth={1.5}
+            />
           </div>
           <div>
             <div style={{ fontFamily: SANS, fontSize: 15, fontWeight: 600, color: tok.textPrimary, lineHeight: 1.2 }}>
-              {action.title}
+              {status === 'done'
+                ? 'Done'
+                : status === 'error'
+                  ? 'Something went wrong'
+                  : action.title}
             </div>
             <div style={{ fontFamily: SANS, fontSize: 12.5, color: tok.textMuted, marginTop: 5, lineHeight: 1.55 }}>
-              {action.description}
+              {status === 'done'
+                ? action.doneMessage
+                : status === 'error'
+                  ? 'The operation failed. Check the server logs for details.'
+                  : action.description}
             </div>
           </div>
         </div>
 
-        {/* Input prompt */}
-        <div>
-          <div style={{ fontFamily: SANS, fontSize: 12.5, color: tok.textSecondary, marginBottom: 8 }}>
-            Type <span style={{ fontFamily: MONO, fontSize: 12, color: tok.recording }}>{action.keyword}</span> to confirm
+        {/* Input prompt — hidden after confirm */}
+        {!status && (
+          <div>
+            <div style={{ fontFamily: SANS, fontSize: 12.5, color: tok.textSecondary, marginBottom: 8 }}>
+              Type <span style={{ fontFamily: MONO, fontSize: 12, color: tok.recording }}>{action.keyword}</span> to confirm
+            </div>
+            <input
+              ref={inputRef}
+              type="text"
+              value={typed}
+              onChange={e => setTyped(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && matches) handleConfirm(); }}
+              placeholder={action.keyword}
+              autoComplete="off"
+              style={{
+                width: '100%', fontFamily: MONO, fontSize: 13.5,
+                color: tok.textPrimary, background: tok.surfaceElevated,
+                border: `1px solid ${matches ? tok.recording : tok.border}`,
+                borderRadius: 10, padding: '10px 14px', outline: 'none',
+                transition: 'border-color 120ms',
+              }}
+            />
           </div>
-          <input
-            ref={inputRef}
-            type="text"
-            value={typed}
-            onChange={e => setTyped(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && matches) handleConfirm(); }}
-            placeholder={action.keyword}
-            autoComplete="off"
-            style={{
-              width: '100%', fontFamily: MONO, fontSize: 13.5,
-              color: tok.textPrimary, background: tok.surfaceElevated,
-              border: `1px solid ${matches ? tok.recording : tok.border}`,
-              borderRadius: 10, padding: '10px 14px', outline: 'none',
-              transition: 'border-color 120ms',
-            }}
-          />
-        </div>
+        )}
+
+        {/* Loading indicator */}
+        {status === 'running' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: MONO, fontSize: 12, color: tok.textMuted }}>
+            <div style={{
+              width: 14, height: 14, borderRadius: '50%',
+              border: `2px solid ${tok.border}`,
+              borderTopColor: tok.accent,
+              animation: 'spin 0.7s linear infinite',
+            }} />
+            Working…
+          </div>
+        )}
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button
-            onClick={onClose}
-            style={{
-              fontFamily: SANS, fontSize: 13, fontWeight: 500,
-              color: tok.textSecondary, background: 'transparent',
-              border: `1px solid ${tok.border}`, borderRadius: 10,
-              padding: '9px 18px', cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={!matches}
-            style={{
-              fontFamily: SANS, fontSize: 13, fontWeight: 500,
-              color: '#fff', background: tok.recording, border: 'none',
-              borderRadius: 10, padding: '9px 18px',
-              cursor: matches ? 'pointer' : 'default',
-              opacity: matches ? 1 : 0.35,
-              transition: 'opacity 150ms',
-            }}
-          >
-            {action.buttonLabel}
-          </button>
+          {status === 'done' && action.showReload && (
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                fontFamily: SANS, fontSize: 13, fontWeight: 500,
+                color: '#fff', background: tok.accent, border: 'none',
+                borderRadius: 10, padding: '9px 18px', cursor: 'pointer',
+              }}
+            >
+              Reload page
+            </button>
+          )}
+
+          {(status === 'done' || status === 'error') && (
+            <button
+              onClick={onClose}
+              style={{
+                fontFamily: SANS, fontSize: 13, fontWeight: 500,
+                color: tok.textSecondary, background: 'transparent',
+                border: `1px solid ${tok.border}`, borderRadius: 10,
+                padding: '9px 18px', cursor: 'pointer',
+              }}
+            >
+              Close
+            </button>
+          )}
+
+          {!status && (
+            <>
+              <button
+                onClick={onClose}
+                style={{
+                  fontFamily: SANS, fontSize: 13, fontWeight: 500,
+                  color: tok.textSecondary, background: 'transparent',
+                  border: `1px solid ${tok.border}`, borderRadius: 10,
+                  padding: '9px 18px', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={!matches}
+                style={{
+                  fontFamily: SANS, fontSize: 13, fontWeight: 500,
+                  color: '#fff', background: tok.recording, border: 'none',
+                  borderRadius: 10, padding: '9px 18px',
+                  cursor: matches ? 'pointer' : 'default',
+                  opacity: matches ? 1 : 0.35,
+                  transition: 'opacity 150ms',
+                }}
+              >
+                {action.buttonLabel}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>,
@@ -419,16 +710,28 @@ function DangerZonePanel({ tok }) {
 
   const ACTIONS = {
     purge: {
-      title: 'Purge all memories',
+      title:       'Purge all memories',
       description: 'Permanently deletes all clusters, transcripts, and vector embeddings. Entities are preserved. This cannot be undone.',
-      keyword: 'purge',
+      keyword:     'purge',
       buttonLabel: 'Purge all memories',
+      doneMessage: 'All clusters, transcripts, and embeddings have been deleted. Entities are intact.',
+      showReload:  false,
+      onConfirm:   async () => {
+        const r = await fetch('/admin/purge', { method: 'POST' });
+        if (!r.ok) throw new Error(`${r.status}`);
+      },
     },
     reset: {
-      title: 'Factory reset',
-      description: 'Wipes all data, certificates, and configuration. Returns Ombra to a fresh install state. This cannot be undone.',
-      keyword: 'reset',
+      title:       'Factory reset',
+      description: 'Wipes all captured data — sessions, clusters, entities, embeddings, and profile. Config and certificates are kept. This cannot be undone.',
+      keyword:     'reset',
       buttonLabel: 'Factory reset',
+      doneMessage: 'All data has been wiped. Reload the page to start fresh.',
+      showReload:  true,
+      onConfirm:   async () => {
+        const r = await fetch('/admin/factory-reset', { method: 'POST' });
+        if (!r.ok) throw new Error(`${r.status}`);
+      },
     },
   };
 
@@ -491,12 +794,12 @@ function ConfigContent({ tok }) {
       {isMobile ? (
         <>
           <TlsPanel  tok={tok} />
-          <DdnsPanel tok={tok} />
+          <ConnectionPanel tok={tok} />
         </>
       ) : (
         <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
           <TlsPanel  tok={tok} />
-          <DdnsPanel tok={tok} />
+          <ConnectionPanel tok={tok} />
         </div>
       )}
 

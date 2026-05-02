@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
+use axum_server::tls_rustls::RustlsConfig;
 use tokio::sync::broadcast;
 use ombra_ai::{
     embeddings::EmbeddingEngine,
@@ -27,4 +28,5 @@ pub struct AppState {
     pub user_profile_summary: Arc<RwLock<Option<String>>>,
     pub event_broadcast: broadcast::Sender<ServerEvent>,
     pub log_buffer: LogBuffer,
+    pub tls_config: RustlsConfig,
 }

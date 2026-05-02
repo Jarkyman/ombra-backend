@@ -57,6 +57,11 @@ fn run_loop(
     tx: mpsc::Sender<BackgroundEvent>,
 ) -> io::Result<()> {
     loop {
+        // Detect Tailscale status once when TailscaleCheck step is entered
+        if app.step == Step::TailscaleCheck && app.tailscale_status.is_none() {
+            app.tailscale_status = Some(background::detect_tailscale_status());
+        }
+
         // Transition through Starting: do sync setup, launch background tasks
         if app.step == Step::Starting && !app.setup_triggered {
             app.setup_triggered = true;
@@ -110,6 +115,7 @@ fn do_sync_setup(app: &mut App) {
         &app.install_dir,
         profile,
         app.language.clone(),
+        app.connection_mode.clone(),
         &app.ddns_token.clone(),
         &app.ddns_subdomain.clone(),
     ) {

@@ -58,3 +58,55 @@ fn entity_to_response(e: db::entity::Entity) -> EntityResponse {
         profile_summary: e.profile_summary,
     }
 }
+
+#[derive(Serialize)]
+struct GraphNode {
+    id: String,
+    name: String,
+    entity_type: String,
+    encounter_count: i64,
+}
+
+#[derive(Serialize)]
+struct GraphEdge {
+    source: String,
+    target: String,
+    strength: f64,
+}
+
+#[derive(Serialize)]
+struct GraphResponse {
+    nodes: Vec<GraphNode>,
+    edges: Vec<GraphEdge>,
+}
+
+pub async fn graph(State(state): State<AppState>) -> impl IntoResponse {
+    match db::entity::get_entity_graph(&state.database_pool, 200).await {
+        Ok((raw_nodes, raw_edges)) => {
+            let nodes = raw_nodes
+                .into_iter()
+                .map(|n| GraphNode {
+                    id: n.id,
+                    name: n.name,
+                    entity_type: n.entity_type,
+                    encounter_count: n.encounter_count,
+                })
+                .collect();
+
+            let edges = raw_edges
+                .into_iter()
+                .map(|e| GraphEdge {
+                    source: e.entity_id,
+                    target: e.related_entity_id,
+                    strength: e.strength,
+                })
+                .collect();
+
+            (StatusCode::OK, Json(GraphResponse { nodes, edges })).into_response()
+        }
+        Err(error) => {
+            tracing::error!(%error, "get entity graph failed");
+            super::internal_error()
+        }
+    }
+}

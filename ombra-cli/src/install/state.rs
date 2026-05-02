@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ombra_common::config::RemoteAccessMode;
 use ombra_common::hardware::HardwareProfile;
 use ratatui::widgets::ListState;
 
@@ -10,9 +11,10 @@ pub enum Step {
     Welcome,
     ModelSelect,
     LanguageInput,
-    RemoteAccessChoice,
+    ConnectionModeSelect,
     RemoteTokenInput,
     RemoteSubdomainInput,
+    TailscaleCheck,
     Starting,
     OnboardingName,
     OnboardingOccupation,
@@ -23,6 +25,67 @@ pub enum Step {
     Waiting,
     Done,
 }
+
+#[derive(Debug, Clone)]
+pub enum TailscaleStatus {
+    NotInstalled,
+    NotLoggedIn,
+    Connected { ip: String },
+}
+
+pub struct ConnectionModeEntry {
+    pub mode: Option<RemoteAccessMode>,
+    pub label: &'static str,
+    pub description: &'static str,
+}
+
+pub const CONNECTION_MODES: &[ConnectionModeEntry] = &[
+    ConnectionModeEntry {
+        mode: Some(RemoteAccessMode::LocalOnly),
+        label: "Local only",
+        description: "LAN + ombra.local  ·  no setup required",
+    },
+    ConnectionModeEntry {
+        mode: Some(RemoteAccessMode::DuckDns),
+        label: "DuckDNS",
+        description: "Free DDNS + Let's Encrypt  ·  requires router port-forward",
+    },
+    ConnectionModeEntry {
+        mode: Some(RemoteAccessMode::Tailscale),
+        label: "Tailscale",
+        description: "Zero-config VPN  ·  no port-forward needed",
+    },
+    ConnectionModeEntry {
+        mode: None,
+        label: "OmbraDNS",
+        description: "(coming soon)",
+    },
+    ConnectionModeEntry {
+        mode: None,
+        label: "ZeroTier",
+        description: "(coming soon)",
+    },
+    ConnectionModeEntry {
+        mode: None,
+        label: "Cloudflare Tunnel",
+        description: "(coming soon)",
+    },
+    ConnectionModeEntry {
+        mode: None,
+        label: "Remote.It",
+        description: "(coming soon)",
+    },
+    ConnectionModeEntry {
+        mode: None,
+        label: "ngrok",
+        description: "(coming soon)",
+    },
+    ConnectionModeEntry {
+        mode: None,
+        label: "packetriot",
+        description: "(coming soon)",
+    },
+];
 
 #[derive(Debug, Default, Clone)]
 pub struct OnboardingAnswers {
@@ -72,8 +135,6 @@ impl BackgroundProgress {
             && self.model.status == TaskStatus::Done
             && self.build == TaskStatus::Done
     }
-
-
 }
 
 #[derive(Debug)]
@@ -100,9 +161,10 @@ pub struct App {
     pub install_dir: PathBuf,
     pub detected_profile: HardwareProfile,
     pub list_state: ListState,
-    pub remote_access: bool,
+    pub connection_mode: RemoteAccessMode,
     pub ddns_token: String,
     pub ddns_subdomain: String,
+    pub tailscale_status: Option<TailscaleStatus>,
     pub language: String,
     pub onboarding: OnboardingAnswers,
     pub progress: BackgroundProgress,
@@ -129,9 +191,10 @@ impl App {
             install_dir,
             detected_profile: detected,
             list_state,
-            remote_access: false,
+            connection_mode: RemoteAccessMode::LocalOnly,
             ddns_token: String::new(),
             ddns_subdomain: String::new(),
+            tailscale_status: None,
             language: "en".to_string(),
             onboarding: OnboardingAnswers::default(),
             progress: BackgroundProgress::default(),
@@ -180,7 +243,6 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        // Ctrl-C exits anywhere
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.should_quit = true;
             return;
@@ -217,7 +279,8 @@ impl App {
                         self.language = self.input.trim().to_lowercase();
                     }
                     self.input.clear();
-                    self.step = Step::RemoteAccessChoice;
+                    self.list_state.select(Some(0));
+                    self.step = Step::ConnectionModeSelect;
                 }
                 KeyCode::Backspace => {
                     self.input.pop();
@@ -228,15 +291,41 @@ impl App {
                 _ => {}
             },
 
-            Step::RemoteAccessChoice => match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    self.remote_access = true;
-                    self.input.clear();
-                    self.step = Step::RemoteTokenInput;
+            Step::ConnectionModeSelect => match key.code {
+                KeyCode::Up => {
+                    let i = self.list_state.selected().unwrap_or(0);
+                    let prev = (0..i)
+                        .rev()
+                        .find(|&j| CONNECTION_MODES[j].mode.is_some())
+                        .unwrap_or(i);
+                    self.list_state.select(Some(prev));
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Enter => {
-                    self.remote_access = false;
-                    self.step = Step::Starting;
+                KeyCode::Down => {
+                    let i = self.list_state.selected().unwrap_or(0);
+                    let next = (i + 1..CONNECTION_MODES.len())
+                        .find(|&j| CONNECTION_MODES[j].mode.is_some())
+                        .unwrap_or(i);
+                    self.list_state.select(Some(next));
+                }
+                KeyCode::Enter => {
+                    let i = self.list_state.selected().unwrap_or(0);
+                    match CONNECTION_MODES[i].mode {
+                        Some(RemoteAccessMode::LocalOnly) => {
+                            self.connection_mode = RemoteAccessMode::LocalOnly;
+                            self.step = Step::Starting;
+                        }
+                        Some(RemoteAccessMode::DuckDns) => {
+                            self.connection_mode = RemoteAccessMode::DuckDns;
+                            self.input.clear();
+                            self.step = Step::RemoteTokenInput;
+                        }
+                        Some(RemoteAccessMode::Tailscale) => {
+                            self.connection_mode = RemoteAccessMode::Tailscale;
+                            self.tailscale_status = None;
+                            self.step = Step::TailscaleCheck;
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             },
@@ -270,6 +359,12 @@ impl App {
                 }
                 _ => {}
             },
+
+            Step::TailscaleCheck => {
+                if key.code == KeyCode::Enter {
+                    self.step = Step::Starting;
+                }
+            }
 
             Step::Starting => {}
 
@@ -343,6 +438,4 @@ impl App {
         };
         (current, 6)
     }
-
-
 }

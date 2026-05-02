@@ -1,7 +1,6 @@
 const { useState, useEffect, useRef } = React;
 
-const HIST_LEN       = 48;
-const POLL_INTERVAL  = 2000;
+const HIST_LEN = 48;
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -204,22 +203,18 @@ function HardwareContent({ tok }) {
   const isMobile = width < 768;
 
   useEffect(() => {
-    let timer;
-    const poll = () => {
-      fetch('/admin/hardware')
-        .then(r => r.json())
-        .then(data => {
-          const avg = data.cores.length > 0
-            ? data.cores.reduce((s, c) => s + c, 0) / data.cores.length
-            : 0;
-          histRef.current = [...histRef.current.slice(1), avg];
-          setHw({ ...data, _hist: [...histRef.current] });
-        })
-        .catch(() => {})
-        .finally(() => { timer = setTimeout(poll, POLL_INTERVAL); });
+    const source = new EventSource('/admin/hardware/stream');
+    source.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const avg = data.cores.length > 0
+          ? data.cores.reduce((s, c) => s + c, 0) / data.cores.length
+          : 0;
+        histRef.current = [...histRef.current.slice(1), avg];
+        setHw({ ...data, _hist: [...histRef.current] });
+      } catch {}
     };
-    poll();
-    return () => clearTimeout(timer);
+    return () => source.close();
   }, []);
 
   if (!hw) return (

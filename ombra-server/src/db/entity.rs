@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -146,6 +148,71 @@ pub async fn get_cluster_summaries_for_entity(
     .fetch_all(pool)
     .await
     .map_err(|e| OmbraError::Storage(format!("get cluster summaries for entity: {e}")))
+}
+
+#[derive(Debug, FromRow)]
+pub struct GraphNodeRow {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub encounter_count: i64,
+}
+
+#[derive(Debug, FromRow)]
+pub struct GraphEdgeRow {
+    pub entity_id: String,
+    pub related_entity_id: String,
+    pub strength: f64,
+}
+
+pub async fn get_entity_graph(
+    pool: &DatabasePool,
+    max_nodes: i64,
+) -> Result<(Vec<GraphNodeRow>, Vec<GraphEdgeRow>), OmbraError> {
+    let nodes = sqlx::query_as::<_, GraphNodeRow>(
+        "SELECT id, name, entity_type, encounter_count \
+         FROM entities ORDER BY encounter_count DESC LIMIT ?",
+    )
+    .bind(max_nodes)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| OmbraError::Storage(format!("get graph nodes: {e}")))?;
+
+    let node_ids: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+
+    let all_edges = sqlx::query_as::<_, GraphEdgeRow>(
+        "SELECT entity_id, related_entity_id, strength FROM entity_relationships",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| OmbraError::Storage(format!("get graph edges: {e}")))?;
+
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let edges = all_edges
+        .into_iter()
+        .filter(|e| {
+            node_ids.contains(e.entity_id.as_str())
+                && node_ids.contains(e.related_entity_id.as_str())
+        })
+        .filter_map(|e| {
+            let key = if e.entity_id <= e.related_entity_id {
+                (e.entity_id.clone(), e.related_entity_id.clone())
+            } else {
+                (e.related_entity_id.clone(), e.entity_id.clone())
+            };
+            if seen.insert(key.clone()) {
+                Some(GraphEdgeRow {
+                    entity_id: key.0,
+                    related_entity_id: key.1,
+                    strength: e.strength,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok((nodes, edges))
 }
 
 #[cfg(test)]

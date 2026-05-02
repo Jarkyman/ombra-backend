@@ -64,6 +64,17 @@ impl QdrantVectorStore {
         Ok(store)
     }
 
+    pub async fn clear_collections(&self) -> Result<(), OmbraError> {
+        for name in [&self.collection_name, &self.entity_collection_name] {
+            self.client
+                .delete_collection(name.as_str())
+                .await
+                .map_err(|e| OmbraError::Storage(format!("delete collection {name}: {e}")))?;
+            self.ensure_collection_exists(name).await?;
+        }
+        Ok(())
+    }
+
     async fn ensure_collection_exists(&self, name: &str) -> Result<(), OmbraError> {
         let collections = self
             .client

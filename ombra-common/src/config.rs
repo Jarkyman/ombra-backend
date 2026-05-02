@@ -6,6 +6,21 @@ use crate::encryption;
 use crate::error::OmbraError;
 use crate::hardware::HardwareProfile;
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteAccessMode {
+    #[default]
+    LocalOnly,
+    DuckDns,
+    Tailscale,
+    ZeroTier,
+    CloudflareTunnel,
+    RemoteIt,
+    Ngrok,
+    Packetriot,
+    OmbraDns,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DdnsConfig {
     pub provider: DdnsProvider,
@@ -50,11 +65,28 @@ pub struct AppConfig {
     pub provision_port: u16,
     pub encryption_key: String,
     pub ddns: Option<DdnsConfig>,
+    #[serde(default = "default_admin_dir")]
+    pub admin_dir: PathBuf,
+    #[serde(default = "default_ca_key_path")]
+    pub tls_ca_key_path: PathBuf,
+    #[serde(default)]
+    pub remote_access_mode: RemoteAccessMode,
+    #[serde(default = "default_le_server_cert_path")]
+    pub le_server_cert_path: PathBuf,
+    #[serde(default = "default_le_server_key_path")]
+    pub le_server_key_path: PathBuf,
+    #[serde(default = "default_le_account_key_path")]
+    pub le_account_key_path: PathBuf,
 }
 
 fn default_client_cert_path() -> PathBuf { PathBuf::from("certs/client.crt") }
 fn default_client_key_path() -> PathBuf { PathBuf::from("certs/client.key") }
 fn default_provision_port() -> u16 { 8081 }
+fn default_admin_dir() -> PathBuf { PathBuf::from("admin") }
+fn default_ca_key_path() -> PathBuf { PathBuf::from("certs/ca.key") }
+fn default_le_server_cert_path() -> PathBuf { PathBuf::from("certs/le-server.crt") }
+fn default_le_server_key_path() -> PathBuf { PathBuf::from("certs/le-server.key") }
+fn default_le_account_key_path() -> PathBuf { PathBuf::from("certs/le-account.json") }
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -77,6 +109,12 @@ impl Default for AppConfig {
             provision_port: default_provision_port(),
             encryption_key: encryption::generate_key(),
             ddns: None,
+            admin_dir: default_admin_dir(),
+            tls_ca_key_path: default_ca_key_path(),
+            remote_access_mode: RemoteAccessMode::default(),
+            le_server_cert_path: default_le_server_cert_path(),
+            le_server_key_path: default_le_server_key_path(),
+            le_account_key_path: default_le_account_key_path(),
         }
     }
 }

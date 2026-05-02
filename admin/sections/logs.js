@@ -1,7 +1,6 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
 const LEVELS = ['ERROR', 'WARN', 'INFO', 'DEBUG'];
-const POLL_INTERVAL_MS = 2000;
 
 function levelColors(tok, level) {
   switch (level) {
@@ -101,29 +100,23 @@ function LogsContent({ tok }) {
   useEffect(() => localStorage.setItem('ombra_logs_search', search), [search]);
 
   useEffect(() => {
-    let timer;
-    const poll = () => {
-      fetch('/admin/logs?limit=100')
-        .then(r => r.json())
-        .then(data => {
-          const fresh = data.filter(e => e.id > lastIdRef.current);
-          if (fresh.length === 0) return;
-          const maxId = Math.max(...fresh.map(e => e.id));
-          lastIdRef.current = maxId;
-          if (pausedRef.current) {
-            setMissed(n => n + fresh.length);
-          } else {
-            setLogs(prev => {
-              const next = [...prev, ...fresh];
-              return next.length > 1000 ? next.slice(-1000) : next;
-            });
-          }
-        })
-        .catch(() => {})
-        .finally(() => { timer = setTimeout(poll, POLL_INTERVAL_MS); });
+    const source = new EventSource('/admin/logs/stream');
+    source.onmessage = (e) => {
+      try {
+        const entry = JSON.parse(e.data);
+        if (entry.id <= lastIdRef.current) return;
+        lastIdRef.current = entry.id;
+        if (pausedRef.current) {
+          setMissed(n => n + 1);
+        } else {
+          setLogs(prev => {
+            const next = [...prev, entry];
+            return next.length > 1000 ? next.slice(-1000) : next;
+          });
+        }
+      } catch {}
     };
-    poll();
-    return () => clearTimeout(timer);
+    return () => source.close();
   }, []);
 
   useEffect(() => {
